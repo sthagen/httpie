@@ -243,10 +243,11 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
         Bytes are always read.
 
         """
-        if self.args.data:
+        if self.args.data or self.args.files:
             self.error('Request body (from stdin or a file) and request '
                        'data (key=value) cannot be mixed. Pass '
-                       '--ignore-stdin to let key/value take priority.')
+                       '--ignore-stdin to let key/value take priority. '
+                       'See https://httpie.org/doc#scripting for details.')
         self.args.data = getattr(fd, 'buffer', fd).read()
 
     def _guess_method(self):
