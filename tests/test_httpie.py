@@ -55,6 +55,25 @@ def test_GET(httpbin_both):
     assert HTTP_OK in r
 
 
+def test_path_dot_normalization():
+    r = http(
+        '--offline',
+        'example.org/../../etc/password',
+        'param==value'
+    )
+    assert 'GET /etc/password?param=value' in r
+
+
+def test_path_as_is():
+    r = http(
+        '--offline',
+        '--path-as-is',
+        'example.org/../../etc/password',
+        'param==value'
+    )
+    assert 'GET /../../etc/password?param=value' in r
+
+
 def test_DELETE(httpbin_both):
     r = http('DELETE', httpbin_both + '/delete')
     assert HTTP_OK in r
@@ -162,3 +181,21 @@ def test_json_input_preserve_order(httpbin_both):
     assert HTTP_OK in r
     assert r.json['data'] == \
         '{"order": {"map": {"1": "first", "2": "second"}}}'
+
+
+def test_offline():
+    r = http(
+        '--offline',
+        'https://this-should.never-resolve/foo',
+    )
+    assert 'GET /foo' in r
+
+
+def test_offline_download():
+    """Absence of response should be handled gracefully with --download"""
+    r = http(
+        '--offline',
+        '--download',
+        'https://this-should.never-resolve/foo',
+    )
+    assert 'GET /foo' in r

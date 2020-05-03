@@ -6,9 +6,19 @@ This document records all notable changes to `HTTPie <https://httpie.org>`_.
 This project adheres to `Semantic Versioning <https://semver.org/>`_.
 
 
-`2.1.0-dev`_ (unreleased)
+`2.2.0-dev`_ (unreleased)
 -------------------------
-* Fixed ``--form`` file upload mixed with redirected ``stdin`` error handling.
+
+`2.1.0`_ (2020-04-18)
+---------------------
+
+* Added ``--path-as-is`` to bypass dot segment (``/../`` or ``/./``)
+  URL squashing (#895).
+* Changed the default ``Accept`` header value for JSON requests from
+  ``application/json, */*`` to ``application/json, */*;q=0.5``
+  to clearly indicate preference (#488).
+* Fixed ``--form`` file upload mixed with redirected ``stdin`` error handling
+  (#840).
 
 
 `2.0.0`_ (2020-01-12)
@@ -118,7 +128,7 @@ This project adheres to `Semantic Versioning <https://semver.org/>`_.
   ``$ alias https='http --default-scheme=https``.
 * Added ``-I`` as a shortcut for ``--ignore-stdin``.
 * Added fish shell completion (located in ``extras/httpie-completion.fish``
-  in the Github repo).
+  in the GitHub repo).
 * Updated ``requests`` to 2.10.0 so that SOCKS support can be added via
   ``pip install requests[socks]``.
 * Changed the default JSON ``Accept`` header from ``application/json``
@@ -414,4 +424,10 @@ This project adheres to `Semantic Versioning <https://semver.org/>`_.
 .. _1.0.2: https://github.com/jakubroztocil/httpie/compare/1.0.1...1.0.2
 .. _1.0.3: https://github.com/jakubroztocil/httpie/compare/1.0.2...1.0.3
 .. _2.0.0: https://github.com/jakubroztocil/httpie/compare/1.0.3...2.0.0
-.. _2.1.0-dev: https://github.com/jakubroztocil/httpie/compare/2.0.0...master
+.. _2.1.0: https://github.com/jakubroztocil/httpie/compare/2.0.0...2.1.0
+.. _2.2.0-dev: https://github.com/jakubroztocil/httpie/compare/2.1.0...master
+
+
+.. _#488:https://github.com/jakubroztocil/httpie/issues/488
+.. _#840:https://github.com/jakubroztocil/httpie/issues/840
+.. _#895:https://github.com/jakubroztocil/httpie/issues/895
