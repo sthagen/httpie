@@ -2,31 +2,27 @@ import argparse
 import http.client
 import json
 import sys
-import zlib
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable, Union
+from typing import Callable, Iterable, Union
 from urllib.parse import urlparse, urlunparse
 
 import requests
-from requests.adapters import HTTPAdapter
-
+# noinspection PyPackageRequirements
+import urllib3
 from httpie import __version__
-from httpie.cli.constants import SSL_VERSION_ARG_MAPPING
 from httpie.cli.dicts import RequestHeadersDict
-from httpie.plugins import plugin_manager
+from httpie.plugins.registry import plugin_manager
 from httpie.sessions import get_httpie_session
-from httpie.utils import repr_dict
+from httpie.ssl import AVAILABLE_SSL_VERSION_ARG_MAPPING, HTTPieHTTPSAdapter
+from httpie.uploads import (
+    compress_request, prepare_request_body,
+    get_multipart_data_and_content_type,
+)
+from httpie.utils import get_expired_cookies, repr_dict
 
 
-try:
-    # noinspection PyPackageRequirements
-    import urllib3
-    # <https://urllib3.readthedocs.io/en/latest/security.html>
-    urllib3.disable_warnings()
-except (ImportError, AttributeError):
-    pass
-
+urllib3.disable_warnings()
 
 FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded; charset=utf-8'
 JSON_CONTENT_TYPE = 'application/json'
@@ -37,6 +33,7 @@ DEFAULT_UA = f'HTTPie/{__version__}'
 def collect_messages(
     args: argparse.Namespace,
     config_dir: Path,
+    request_body_read_callback: Callable[[bytes], None] = None,
 ) -> Iterable[Union[requests.PreparedRequest, requests.Response]]:
     httpie_session = None
     httpie_session_headers = None
@@ -52,11 +49,14 @@ def collect_messages(
     request_kwargs = make_request_kwargs(
         args=args,
         base_headers=httpie_session_headers,
+        request_body_read_callback=request_body_read_callback
     )
     send_kwargs = make_send_kwargs(args)
     send_kwargs_mergeable_from_env = make_send_kwargs_mergeable_from_env(args)
     requests_session = build_requests_session(
         ssl_version=args.ssl_version,
+        ciphers=args.ciphers,
+        verify=bool(send_kwargs_mergeable_from_env['verify'])
     )
 
     if httpie_session:
@@ -84,8 +84,12 @@ def collect_messages(
             prepped_url=prepared_request.url,
         )
     if args.compress and prepared_request.body:
-        compress_body(prepared_request, always=args.compress > 1)
+        compress_request(
+            request=prepared_request,
+            always=args.compress > 1,
+        )
     response_count = 0
+    expired_cookies = []
     while prepared_request:
         yield prepared_request
         if not args.offline:
@@ -99,6 +103,12 @@ def collect_messages(
                     **send_kwargs_merged,
                     **send_kwargs,
                 )
+
+            # noinspection PyProtectedMember
+            expired_cookies += get_expired_cookies(
+                headers=response.raw._original_response.msg._headers
+            )
+
             response_count += 1
             if response.next:
                 if args.max_redirects and response_count == args.max_redirects:
@@ -114,6 +124,10 @@ def collect_messages(
     if httpie_session:
         if httpie_session.is_new() or not args.session_read_only:
             httpie_session.cookies = requests_session.cookies
+            httpie_session.remove_cookies(
+                # TODO: take path & domain into account?
+                cookie['name'] for cookie in expired_cookies
+            )
             httpie_session.save()
 
 
@@ -121,6 +135,7 @@ def collect_messages(
 @contextmanager
 def max_headers(limit):
     # <https://github.com/jakubroztocil/httpie/issues/802>
+    # noinspection PyUnresolvedReferences
     orig = http.client._MAXHEADERS
     http.client._MAXHEADERS = limit or float('Inf')
     try:
@@ -129,45 +144,23 @@ def max_headers(limit):
         http.client._MAXHEADERS = orig
 
 
-def compress_body(request: requests.PreparedRequest, always: bool):
-    deflater = zlib.compressobj()
-    body_bytes = (
-        request.body
-        if isinstance(request.body, bytes)
-        else request.body.encode()
-    )
-    deflated_data = deflater.compress(body_bytes)
-    deflated_data += deflater.flush()
-    is_economical = len(deflated_data) < len(body_bytes)
-    if is_economical or always:
-        request.body = deflated_data
-        request.headers['Content-Encoding'] = 'deflate'
-        request.headers['Content-Length'] = str(len(deflated_data))
-
-
-class HTTPieHTTPSAdapter(HTTPAdapter):
-
-    def __init__(self, ssl_version=None, **kwargs):
-        self._ssl_version = ssl_version
-        super().__init__(**kwargs)
-
-    def init_poolmanager(self, *args, **kwargs):
-        kwargs['ssl_version'] = self._ssl_version
-        super().init_poolmanager(*args, **kwargs)
-
-
 def build_requests_session(
+    verify: bool,
     ssl_version: str = None,
+    ciphers: str = None,
 ) -> requests.Session:
     requests_session = requests.Session()
 
     # Install our adapter.
-    requests_session.mount('https://', HTTPieHTTPSAdapter(
+    https_adapter = HTTPieHTTPSAdapter(
+        ciphers=ciphers,
+        verify=verify,
         ssl_version=(
-            SSL_VERSION_ARG_MAPPING[ssl_version]
+            AVAILABLE_SSL_VERSION_ARG_MAPPING[ssl_version]
             if ssl_version else None
-        )
-    ))
+        ),
+    )
+    requests_session.mount('https://', https_adapter)
 
     # Install adapters from plugins.
     for plugin_cls in plugin_manager.get_transport_plugins():
@@ -249,12 +242,14 @@ def make_send_kwargs_mergeable_from_env(args: argparse.Namespace) -> dict:
 
 def make_request_kwargs(
     args: argparse.Namespace,
-    base_headers: RequestHeadersDict = None
+    base_headers: RequestHeadersDict = None,
+    request_body_read_callback=lambda chunk: chunk
 ) -> dict:
     """
     Translate our `args` into `requests.Request` keyword arguments.
 
     """
+    files = args.files
     # Serialize JSON data, if needed.
     data = args.data
     auto_json = data and not args.form
@@ -271,16 +266,32 @@ def make_request_kwargs(
     if base_headers:
         headers.update(base_headers)
     headers.update(args.headers)
+    if args.offline and args.chunked and 'Transfer-Encoding' not in headers:
+        # When online, we let requests set the header instead to be able more
+        # easily verify chunking is taking place.
+        headers['Transfer-Encoding'] = 'chunked'
     headers = finalize_headers(headers)
+
+    if (args.form and files) or args.multipart:
+        data, headers['Content-Type'] = get_multipart_data_and_content_type(
+            data=args.multipart_data,
+            boundary=args.boundary,
+            content_type=args.headers.get('Content-Type'),
+        )
 
     kwargs = {
         'method': args.method.lower(),
         'url': args.url,
         'headers': headers,
-        'data': data,
+        'data': prepare_request_body(
+            body=data,
+            body_read_callback=request_body_read_callback,
+            chunked=args.chunked,
+            offline=args.offline,
+            content_length_header_value=headers.get('Content-Length'),
+        ),
         'auth': args.auth,
-        'params': args.params,
-        'files': args.files,
+        'params': args.params.items(),
     }
 
     return kwargs

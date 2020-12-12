@@ -5,6 +5,7 @@ from urllib.request import urlopen
 
 import pytest
 import mock
+import requests
 from requests.structures import CaseInsensitiveDict
 
 from httpie.downloads import (
@@ -182,10 +183,11 @@ class TestDownloads:
         # Redirect from `/redirect/1` to `/get`.
         expected_filename = '1.json'
         orig_cwd = os.getcwd()
-        os.chdir(tempfile.mkdtemp(prefix='httpie_download_test_'))
-        try:
-            assert os.listdir('.') == []
-            http('--download', httpbin.url + '/redirect/1')
-            assert os.listdir('.') == [expected_filename]
-        finally:
-            os.chdir(orig_cwd)
+        with tempfile.TemporaryDirectory() as tmp_dirname:
+            os.chdir(tmp_dirname)
+            try:
+                assert os.listdir('.') == []
+                http('--download', httpbin.url + '/redirect/1')
+                assert os.listdir('.') == [expected_filename]
+            finally:
+                os.chdir(orig_cwd)

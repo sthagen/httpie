@@ -7,18 +7,24 @@ from argparse import RawDescriptionHelpFormatter
 from textwrap import dedent
 from urllib.parse import urlsplit
 
-from httpie.cli.argtypes import AuthCredentials, KeyValueArgType, parse_auth
+from requests.utils import get_netrc_auth
+
+from httpie.cli.argtypes import (
+    AuthCredentials, KeyValueArgType, PARSED_DEFAULT_FORMAT_OPTIONS,
+    parse_auth,
+    parse_format_options,
+)
 from httpie.cli.constants import (
     HTTP_GET, HTTP_POST, OUTPUT_OPTIONS, OUTPUT_OPTIONS_DEFAULT,
-    OUTPUT_OPTIONS_DEFAULT_STDOUT_REDIRECTED, OUT_RESP_BODY, PRETTY_MAP,
-    PRETTY_STDOUT_TTY_ONLY, SEPARATOR_CREDENTIALS, SEPARATOR_GROUP_ALL_ITEMS,
-    SEPARATOR_GROUP_DATA_ITEMS, URL_SCHEME_RE,
-    OUTPUT_OPTIONS_DEFAULT_OFFLINE,
+    OUTPUT_OPTIONS_DEFAULT_OFFLINE, OUTPUT_OPTIONS_DEFAULT_STDOUT_REDIRECTED,
+    OUT_RESP_BODY, PRETTY_MAP, PRETTY_STDOUT_TTY_ONLY, RequestType,
+    SEPARATOR_CREDENTIALS,
+    SEPARATOR_GROUP_ALL_ITEMS, SEPARATOR_GROUP_DATA_ITEMS, URL_SCHEME_RE,
 )
 from httpie.cli.exceptions import ParseError
 from httpie.cli.requestitems import RequestItems
 from httpie.context import Environment
-from httpie.plugins import plugin_manager
+from httpie.plugins.registry import plugin_manager
 from httpie.utils import ExplicitNullAuth, get_content_type
 
 
@@ -42,6 +48,8 @@ class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
         return text.splitlines()
 
 
+# TODO: refactor and design type-annotated data structures
+#       for raw args + parsed args and keep things immutable.
 class HTTPieArgumentParser(argparse.ArgumentParser):
     """Adds additional logic to `argparse.ArgumentParser`.
 
@@ -66,32 +74,52 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
     ) -> argparse.Namespace:
         self.env = env
         self.args, no_options = super().parse_known_args(args, namespace)
-
         if self.args.debug:
             self.args.traceback = True
-
         self.has_stdin_data = (
             self.env.stdin
             and not self.args.ignore_stdin
             and not self.env.stdin_isatty
         )
-
         # Arguments processing and environment setup.
         self._apply_no_options(no_options)
+        self._process_request_type()
         self._process_download_options()
         self._setup_standard_streams()
         self._process_output_options()
         self._process_pretty_options()
+        self._process_format_options()
         self._guess_method()
         self._parse_items()
-
         if self.has_stdin_data:
             self._body_from_file(self.env.stdin)
+        self._process_url()
+        self._process_auth()
+
+        if self.args.compress:
+            # TODO: allow --compress with --chunked / --multipart
+            if self.args.chunked:
+                self.error('cannot combine --compress and --chunked')
+            if self.args.multipart:
+                self.error('cannot combine --compress and --multipart')
+
+        return self.args
+
+    def _process_request_type(self):
+        request_type = self.args.request_type
+        self.args.json = request_type is RequestType.JSON
+        self.args.multipart = request_type is RequestType.MULTIPART
+        self.args.form = request_type in {
+            RequestType.FORM,
+            RequestType.MULTIPART,
+        }
+
+    def _process_url(self):
         if not URL_SCHEME_RE.match(self.args.url):
-            if os.path.basename(env.program_name) == 'https':
+            if os.path.basename(self.env.program_name) == 'https':
                 scheme = 'https://'
             else:
-                scheme = self.args.default_scheme + "://"
+                scheme = self.args.default_scheme + '://'
 
             # See if we're using curl style shorthand for localhost (:3000/foo)
             shorthand = re.match(r'^:(?!:)(\d*)(/?.*)$', self.args.url)
@@ -104,9 +132,6 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
                 self.args.url += rest
             else:
                 self.args.url = scheme + self.args.url
-        self._process_auth()
-
-        return self.args
 
     # noinspection PyShadowingBuiltins
     def _print_message(self, message, file=None):
@@ -125,6 +150,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
         Modify `env.stdout` and `env.stdout_isatty` based on args, if needed.
 
         """
+
         self.args.output_file_specified = bool(self.args.output_file)
         if self.args.download:
             # FIXME: Come up with a cleaner solution.
@@ -137,6 +163,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             # The response body will be treated separately.
             self.env.stdout = self.env.stderr
             self.env.stdout_isatty = self.env.stderr_isatty
+
         elif self.args.output_file:
             # When not `--download`ing, then `--output` simply replaces
             # `stdout`. The file is opened for appending, which isn't what
@@ -153,8 +180,13 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             self.env.stdout = self.args.output_file
             self.env.stdout_isatty = False
 
+        if self.args.quiet:
+            self.env.stderr = self.env.devnull
+            if not (self.args.output_file_specified and not self.args.download):
+                self.env.stdout = self.env.devnull
+
     def _process_auth(self):
-        # TODO: refactor
+        # TODO: refactor & simplify this method.
         self.args.auth_plugin = None
         default_auth_plugin = plugin_manager.get_auth_plugins()[0]
         auth_type_set = self.args.auth_type is not None
@@ -176,6 +208,19 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             if not self.args.auth_type:
                 self.args.auth_type = default_auth_plugin.auth_type
             plugin = plugin_manager.get_auth_plugin(self.args.auth_type)()
+
+            if (not self.args.ignore_netrc
+                    and self.args.auth is None
+                    and plugin.netrc_parse):
+                # Only host needed, so it’s OK URL not finalized.
+                netrc_credentials = get_netrc_auth(self.args.url)
+                if netrc_credentials:
+                    self.args.auth = AuthCredentials(
+                        key=netrc_credentials[0],
+                        value=netrc_credentials[1],
+                        sep=SEPARATOR_CREDENTIALS,
+                        orig=SEPARATOR_CREDENTIALS.join(netrc_credentials)
+                    )
 
             if plugin.auth_require and self.args.auth is None:
                 self.error('--auth required')
@@ -248,7 +293,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
                        'data (key=value) cannot be mixed. Pass '
                        '--ignore-stdin to let key/value take priority. '
                        'See https://httpie.org/doc#scripting for details.')
-        self.args.data = getattr(fd, 'buffer', fd).read()
+        self.args.data = getattr(fd, 'buffer', fd)
 
     def _guess_method(self):
         """Set `args.method` if not specified to either POST or GET
@@ -309,6 +354,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             self.args.data = request_items.data
             self.args.files = request_items.files
             self.args.params = request_items.params
+            self.args.multipart_data = request_items.multipart_data
 
         if self.args.files and not self.args.form:
             # `http url @/path/to/file`
@@ -390,3 +436,9 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
         if self.args.download_resume and not (
                 self.args.download and self.args.output_file):
             self.error('--continue requires --output to be specified')
+
+    def _process_format_options(self):
+        parsed_options = PARSED_DEFAULT_FORMAT_OPTIONS
+        for options_group in self.args.format_options or []:
+            parsed_options = parse_format_options(options_group, defaults=parsed_options)
+        self.args.format_options = parsed_options

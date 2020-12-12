@@ -14,10 +14,13 @@ BINARY_SUPPRESSED_NOTICE = (
 )
 
 
-class BinarySuppressedError(Exception):
+class DataSuppressedError(Exception):
+    message = None
+
+
+class BinarySuppressedError(DataSuppressedError):
     """An error indicating that the body is binary and won't be written,
      e.g., for terminal output)."""
-
     message = BINARY_SUPPRESSED_NOTICE
 
 
@@ -63,7 +66,7 @@ class BaseStream:
                     yield chunk
                     if self.on_body_chunk_downloaded:
                         self.on_body_chunk_downloaded(chunk)
-            except BinarySuppressedError as e:
+            except DataSuppressedError as e:
                 if self.with_headers:
                     yield b'\n'
                 yield e.message

@@ -1,10 +1,10 @@
 # coding=utf-8
 """Utilities for HTTPie test suite."""
-import os
 import sys
 import time
 import json
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import Optional, Union
 
@@ -12,6 +12,12 @@ from httpie.status import ExitStatus
 from httpie.config import Config
 from httpie.context import Environment
 from httpie.core import main
+
+
+# pytest-httpbin currently does not support chunked requests:
+# <https://github.com/kevin1024/pytest-httpbin/issues/33>
+# <https://github.com/kevin1024/pytest-httpbin/issues/28>
+HTTPBIN_WITH_CHUNKED_SUPPORT = 'http://httpbin.org'
 
 
 TESTS_ROOT = Path(__file__).parent
@@ -34,6 +40,11 @@ def mk_config_dir() -> Path:
 def add_auth(url, auth):
     proto, rest = url.split('://', 1)
     return proto + '://' + auth + '@' + rest
+
+
+class StdinBytesIO(BytesIO):
+    """To be used for `MockEnvironment.stdin`"""
+    len = 0  # See `prepare_request_body()`
 
 
 class MockEnvironment(Environment):
@@ -94,10 +105,12 @@ class BaseCLIResponse:
 
         - stdout output: print(self)
         - stderr output: print(self.stderr)
+        - devnull output: print(self.devnull)
         - exit_status output: print(self.exit_status)
 
     """
     stderr: str = None
+    devnull: str = None
     json: dict = None
     exit_status: ExitStatus = None
 
@@ -131,10 +144,9 @@ class StrCLIResponse(str, BaseCLIResponse):
             elif self.strip().startswith('{'):
                 # Looks like JSON body.
                 self._json = json.loads(self)
-            elif (self.count('Content-Type:') == 1
-                    and 'application/json' in self):
-                # Looks like a whole JSON HTTP message,
-                # try to extract its body.
+            elif self.count('Content-Type:') == 1:
+                # Looks like a HTTP message,
+                # try to extract JSON from its body.
                 try:
                     j = self.strip()[self.strip().rindex('\r\n\r\n'):]
                 except ValueError:
@@ -161,17 +173,21 @@ def http(
     # noinspection PyUnresolvedReferences
     """
     Run HTTPie and capture stderr/out and exit status.
+    Content writtent to devnull will be captured only if
+    env.devnull is set manually.
 
     Invoke `httpie.core.main()` with `args` and `kwargs`,
     and return a `CLIResponse` subclass instance.
 
     The return value is either a `StrCLIResponse`, or `BytesCLIResponse`
-    if unable to decode the output.
+    if unable to decode the output. Devnull is string when possible,
+    bytes otherwise.
 
     The response has the following attributes:
 
         `stdout` is represented by the instance itself (print r)
         `stderr`: text written to stderr
+        `devnull` text written to devnull.
         `exit_status`: the exit status
         `json`: decoded JSON (if possible) or `None`
 
@@ -204,6 +220,7 @@ def http(
 
     stdout = env.stdout
     stderr = env.stderr
+    devnull = env.devnull
 
     args = list(args)
     args_with_config_defaults = args + env.config.default_options
@@ -216,6 +233,7 @@ def http(
             add_to_args.append('--timeout=3')
 
     complete_args = [program_name, *add_to_args, *args]
+    # print(' '.join(complete_args))
 
     def dump_stderr():
         stderr.seek(0)
@@ -248,13 +266,22 @@ def http(
 
         stdout.seek(0)
         stderr.seek(0)
+        devnull.seek(0)
         output = stdout.read()
+        devnull_output = devnull.read()
         try:
             output = output.decode('utf8')
         except UnicodeDecodeError:
             r = BytesCLIResponse(output)
         else:
             r = StrCLIResponse(output)
+
+        try:
+            devnull_output = devnull_output.decode('utf8')
+        except Exception:
+            pass
+
+        r.devnull = devnull_output
         r.stderr = stderr.read()
         r.exit_status = exit_status
 
@@ -264,6 +291,7 @@ def http(
         return r
 
     finally:
+        devnull.close()
         stdout.close()
         stderr.close()
         env.cleanup()

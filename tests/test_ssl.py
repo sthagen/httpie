@@ -1,11 +1,11 @@
-import os
-
 import pytest
 import pytest_httpbin.certs
 import requests.exceptions
+import ssl
+import urllib3
 
+from httpie.ssl import AVAILABLE_SSL_VERSION_ARG_MAPPING, DEFAULT_SSL_CIPHERS
 from httpie.status import ExitStatus
-from httpie.cli.constants import SSL_VERSION_ARG_MAPPING
 from utils import HTTP_OK, TESTS_ROOT, http
 
 
@@ -23,18 +23,20 @@ except ImportError:
         requests.exceptions.SSLError,
     )
 
+CERTS_ROOT = TESTS_ROOT / 'client_certs'
+CLIENT_CERT = str(CERTS_ROOT / 'client.crt')
+CLIENT_KEY = str(CERTS_ROOT / 'client.key')
+CLIENT_PEM = str(CERTS_ROOT / 'client.pem')
 
-CLIENT_CERT = os.path.join(TESTS_ROOT, 'client_certs', 'client.crt')
-CLIENT_KEY = os.path.join(TESTS_ROOT, 'client_certs', 'client.key')
-CLIENT_PEM = os.path.join(TESTS_ROOT, 'client_certs', 'client.pem')
-# FIXME:
+
 # We test against a local httpbin instance which uses a self-signed cert.
 # Requests without --verify=<CA_BUNDLE> will fail with a verification error.
 # See: https://github.com/kevin1024/pytest-httpbin#https-support
 CA_BUNDLE = pytest_httpbin.certs.where()
 
 
-@pytest.mark.parametrize('ssl_version', SSL_VERSION_ARG_MAPPING.keys())
+@pytest.mark.parametrize('ssl_version',
+                         AVAILABLE_SSL_VERSION_ARG_MAPPING.keys())
 def test_ssl_version(httpbin_secure, ssl_version):
     try:
         r = http(
@@ -46,6 +48,12 @@ def test_ssl_version(httpbin_secure, ssl_version):
         if ssl_version == 'ssl3':
             # pytest-httpbin doesn't support ssl3
             pass
+        elif e.__context__ is not None:  # Check if root cause was an unsupported TLS version
+            root = e.__context__
+            while root.__context__ is not None:
+                root = root.__context__
+            if isinstance(root, ssl.SSLError) and root.reason == "TLSV1_ALERT_PROTOCOL_VERSION":
+                pytest.skip("Unsupported TLS version: {}".format(ssl_version))
         else:
             raise
 
@@ -84,11 +92,14 @@ class TestClientCert:
 class TestServerCert:
 
     def test_verify_no_OK(self, httpbin_secure):
+        # Avoid warnings when explicitly testing insecure requests
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         r = http(httpbin_secure.url + '/get', '--verify=no')
         assert HTTP_OK in r
 
     @pytest.mark.parametrize('verify_value', ['false', 'fALse'])
     def test_verify_false_OK(self, httpbin_secure, verify_value):
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         r = http(httpbin_secure.url + '/get', '--verify', verify_value)
         assert HTTP_OK in r
 
@@ -113,3 +124,28 @@ class TestServerCert:
     def test_verify_custom_ca_bundle_invalid_bundle(self, httpbin_secure):
         with pytest.raises(ssl_errors):
             http(httpbin_secure.url + '/get', '--verify', __file__)
+
+
+def test_ciphers(httpbin_secure):
+    r = http(
+        httpbin_secure.url + '/get',
+        '--ciphers',
+        DEFAULT_SSL_CIPHERS,
+    )
+    assert HTTP_OK in r
+
+
+def test_ciphers_none_can_be_selected(httpbin_secure):
+    r = http(
+        httpbin_secure.url + '/get',
+        '--ciphers',
+        '__FOO__',
+        tolerate_error_exit_status=True,
+    )
+    assert r.exit_status == ExitStatus.ERROR
+    # Linux/macOS:
+    #   http: error: SSLError: ('No cipher can be selected.',)
+    # OpenBSD:
+    #   <https://marc.info/?l=openbsd-ports&m=159251948515635&w=2>
+    #   http: error: Error: [('SSL routines', '(UNKNOWN)SSL_internal', 'no cipher match')]
+    assert 'cipher' in r.stderr

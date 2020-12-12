@@ -3,7 +3,7 @@ class BasePlugin:
     # The name of the plugin, eg. "My auth".
     name = None
 
-    # Optional short description. Will be be shown in the help
+    # Optional short description. It will be shown in the help
     # under --auth-type.
     description = None
 
@@ -15,7 +15,9 @@ class AuthPlugin(BasePlugin):
     """
     Base auth plugin class.
 
-    See <https://github.com/httpie/httpie-ntlm> for an example auth plugin.
+    See httpie-ntlm for an example auth plugin:
+
+        <https://github.com/httpie/httpie-ntlm>
 
     See also `test_auth_plugins.py`
 
@@ -33,13 +35,22 @@ class AuthPlugin(BasePlugin):
     # Set this to `False` to disable the parsing and error handling.
     auth_parse = True
 
+    # Set to `True` to make it possible for this auth
+    # plugin to acquire credentials from the user’s netrc file(s).
+    # It is used as a fallback when the credentials are not provided explicitly
+    # through `--auth, -a`. Enabling this will allow skipping `--auth, -a`
+    # even when `auth_require` is set `True` (provided that netrc provides
+    # credential for a given host).
+    netrc_parse = False
+
     # If both `auth_parse` and `prompt_password` are set to `True`,
     # and the value of `-a` lacks the password part,
     # then the user will be prompted to type the password in.
     prompt_password = True
 
     # Will be set to the raw value of `-a` (if provided) before
-    # `get_auth()` gets called.
+    # `get_auth()` gets called. If the credentials came from a netrc file,
+    # then this is `None`.
     raw_auth = None
 
     def get_auth(self, username=None, password=None):
@@ -58,8 +69,13 @@ class AuthPlugin(BasePlugin):
 
 class TransportPlugin(BasePlugin):
     """
+    Requests transport adapter docs:
 
-    https://2.python-requests.org/en/latest/user/advanced/#transport-adapters
+        <https://requests.readthedocs.io/en/latest/user/advanced/#transport-adapters>
+
+    See httpie-unixsocket for an example transport plugin:
+
+        <https://github.com/httpie/httpie-unixsocket>
 
     """
 
@@ -76,6 +92,14 @@ class TransportPlugin(BasePlugin):
 
 
 class ConverterPlugin(BasePlugin):
+    """
+    Possibly converts response data for prettified terminal display.
+
+    See httpie-msgpack for an example converter plugin:
+
+        <https://github.com/rasky/httpie-msgpack>.
+
+    """
 
     def __init__(self, mime):
         self.mime = mime
@@ -89,17 +113,22 @@ class ConverterPlugin(BasePlugin):
 
 
 class FormatterPlugin(BasePlugin):
+    """
+    Possibly formats response body & headers for prettified terminal display.
+
+    """
     group_name = 'format'
 
     def __init__(self, **kwargs):
         """
         :param env: an class:`Environment` instance
         :param kwargs: additional keyword argument that some
-                       processor might require.
+                       formatters might require.
 
         """
         self.enabled = True
         self.kwargs = kwargs
+        self.format_options = kwargs['format_options']
 
     def format_headers(self, headers: str) -> str:
         """Return processed `headers`

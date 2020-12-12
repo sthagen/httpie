@@ -8,11 +8,54 @@ from httpie import __version__
 from httpie.compat import is_windows
 
 
-DEFAULT_CONFIG_DIR = Path(os.environ.get(
-    'HTTPIE_CONFIG_DIR',
-    os.path.expanduser('~/.httpie') if not is_windows else
-    os.path.expandvars(r'%APPDATA%\\httpie')
-))
+ENV_XDG_CONFIG_HOME = 'XDG_CONFIG_HOME'
+ENV_HTTPIE_CONFIG_DIR = 'HTTPIE_CONFIG_DIR'
+DEFAULT_CONFIG_DIRNAME = 'httpie'
+DEFAULT_RELATIVE_XDG_CONFIG_HOME = Path('.config')
+DEFAULT_RELATIVE_LEGACY_CONFIG_DIR = Path('.httpie')
+DEFAULT_WINDOWS_CONFIG_DIR = Path(
+    os.path.expandvars('%APPDATA%')) / DEFAULT_CONFIG_DIRNAME
+
+
+def get_default_config_dir() -> Path:
+    """
+    Return the path to the httpie configuration directory.
+
+    This directory isn't guaranteed to exist, and nor are any of its
+    ancestors (only the legacy ~/.httpie, if returned, is guaranteed to exist).
+
+    XDG Base Directory Specification support:
+
+        <https://wiki.archlinux.org/index.php/XDG_Base_Directory>
+
+        $XDG_CONFIG_HOME is supported; $XDG_CONFIG_DIRS is not
+
+    """
+    # 1. explicitly set through env
+    env_config_dir = os.environ.get(ENV_HTTPIE_CONFIG_DIR)
+    if env_config_dir:
+        return Path(env_config_dir)
+
+    # 2. Windows
+    if is_windows:
+        return DEFAULT_WINDOWS_CONFIG_DIR
+
+    home_dir = Path.home()
+
+    # 3. legacy ~/.httpie
+    legacy_config_dir = home_dir / DEFAULT_RELATIVE_LEGACY_CONFIG_DIR
+    if legacy_config_dir.exists():
+        return legacy_config_dir
+
+    # 4. XDG
+    xdg_config_home_dir = os.environ.get(
+        ENV_XDG_CONFIG_HOME,  # 4.1. explicit
+        home_dir / DEFAULT_RELATIVE_XDG_CONFIG_HOME  # 4.2. default
+    )
+    return Path(xdg_config_home_dir) / DEFAULT_CONFIG_DIRNAME
+
+
+DEFAULT_CONFIG_DIR = get_default_config_dir()
 
 
 class ConfigFileError(Exception):
@@ -65,16 +108,14 @@ class BaseConfigDict(dict):
 
         self.ensure_directory()
 
+        json_string = json.dumps(
+            obj=self,
+            indent=4,
+            sort_keys=True,
+            ensure_ascii=True,
+        )
         try:
-            with self.path.open('w') as f:
-                json.dump(
-                    obj=self,
-                    fp=f,
-                    indent=4,
-                    sort_keys=True,
-                    ensure_ascii=True,
-                )
-                f.write('\n')
+            self.path.write_text(json_string + '\n')
         except IOError:
             if not fail_silently:
                 raise

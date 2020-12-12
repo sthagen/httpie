@@ -4,8 +4,10 @@ Persistent, JSON-serialized sessions.
 """
 import os
 import re
+
+from http.cookies import SimpleCookie
 from pathlib import Path
-from typing import Optional, Union
+from typing import Iterable, Optional, Union
 from urllib.parse import urlsplit
 
 from requests.auth import AuthBase
@@ -13,7 +15,7 @@ from requests.cookies import RequestsCookieJar, create_cookie
 
 from httpie.cli.dicts import RequestHeadersDict
 from httpie.config import BaseConfigDict, DEFAULT_CONFIG_DIR
-from httpie.plugins import plugin_manager
+from httpie.plugins.registry import plugin_manager
 
 
 SESSIONS_DIR_NAME = 'sessions'
@@ -76,7 +78,13 @@ class Session(BaseConfigDict):
                 continue  # Ignore explicitly unset headers
 
             value = value.decode('utf8')
-            if name == 'User-Agent' and value.startswith('HTTPie/'):
+            if name.lower() == 'user-agent' and value.startswith('HTTPie/'):
+                continue
+
+            if name.lower() == 'cookie':
+                for cookie_name, morsel in SimpleCookie(value).items():
+                    self['cookies'][cookie_name] = {'value': morsel.value}
+                del request_headers[name]
                 continue
 
             for prefix in SESSION_IGNORED_HEADER_PREFIXES:
@@ -144,3 +152,8 @@ class Session(BaseConfigDict):
     def auth(self, auth: dict):
         assert {'type', 'raw_auth'} == auth.keys()
         self['auth'] = auth
+
+    def remove_cookies(self, names: Iterable[str]):
+        for name in names:
+            if name in self['cookies']:
+                del self['cookies'][name]

@@ -1,8 +1,8 @@
 """Parsing and processing of CLI input (args, auth credentials, files, stdin).
 
 """
+import enum
 import re
-import ssl
 
 
 # TODO: Use MultiDict for headers once added to `requests`.
@@ -11,6 +11,9 @@ import ssl
 
 # ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 # <https://tools.ietf.org/html/rfc3986#section-3.1>
+from enum import Enum
+
+
 URL_SCHEME_RE = re.compile(r'^[a-z][a-z0-9.+-]*://', re.IGNORECASE)
 
 HTTP_POST = 'POST'
@@ -24,6 +27,7 @@ SEPARATOR_PROXY = ':'
 SEPARATOR_DATA_STRING = '='
 SEPARATOR_DATA_RAW_JSON = ':='
 SEPARATOR_FILE_UPLOAD = '@'
+SEPARATOR_FILE_UPLOAD_TYPE = ';type='  # in already parsed file upload path only
 SEPARATOR_DATA_EMBED_FILE_CONTENTS = '=@'
 SEPARATOR_DATA_EMBED_RAW_JSON_FILE = ':=@'
 SEPARATOR_QUERY_PARAM = '=='
@@ -35,6 +39,12 @@ SEPARATOR_GROUP_DATA_ITEMS = frozenset({
     SEPARATOR_FILE_UPLOAD,
     SEPARATOR_DATA_EMBED_FILE_CONTENTS,
     SEPARATOR_DATA_EMBED_RAW_JSON_FILE
+})
+
+SEPARATORS_GROUP_MULTIPART = frozenset({
+    SEPARATOR_DATA_STRING,
+    SEPARATOR_DATA_EMBED_FILE_CONTENTS,
+    SEPARATOR_FILE_UPLOAD,
 })
 
 # Separators for items whose value is a filename to be embedded
@@ -83,21 +93,28 @@ PRETTY_MAP = {
 }
 PRETTY_STDOUT_TTY_ONLY = object()
 
+
+DEFAULT_FORMAT_OPTIONS = [
+    'headers.sort:true',
+    'json.format:true',
+    'json.indent:4',
+    'json.sort_keys:true',
+]
+SORTED_FORMAT_OPTIONS = [
+    'headers.sort:true',
+    'json.sort_keys:true',
+]
+SORTED_FORMAT_OPTIONS_STRING = ','.join(SORTED_FORMAT_OPTIONS)
+UNSORTED_FORMAT_OPTIONS_STRING = ','.join(
+    option.replace('true', 'false') for option in SORTED_FORMAT_OPTIONS)
+
 # Defaults
 OUTPUT_OPTIONS_DEFAULT = OUT_RESP_HEAD + OUT_RESP_BODY
 OUTPUT_OPTIONS_DEFAULT_STDOUT_REDIRECTED = OUT_RESP_BODY
 OUTPUT_OPTIONS_DEFAULT_OFFLINE = OUT_REQ_HEAD + OUT_REQ_BODY
 
-SSL_VERSION_ARG_MAPPING = {
-    'ssl2.3': 'PROTOCOL_SSLv23',
-    'ssl3': 'PROTOCOL_SSLv3',
-    'tls1': 'PROTOCOL_TLSv1',
-    'tls1.1': 'PROTOCOL_TLSv1_1',
-    'tls1.2': 'PROTOCOL_TLSv1_2',
-    'tls1.3': 'PROTOCOL_TLSv1_3',
-}
-SSL_VERSION_ARG_MAPPING = {
-    cli_arg: getattr(ssl, ssl_constant)
-    for cli_arg, ssl_constant in SSL_VERSION_ARG_MAPPING.items()
-    if hasattr(ssl, ssl_constant)
-}
+
+class RequestType(enum.Enum):
+    FORM = enum.auto()
+    MULTIPART = enum.auto()
+    JSON = enum.auto()

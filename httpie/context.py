@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 from typing import IO, Optional
 
@@ -56,7 +57,7 @@ class Environment:
         )
         del colorama
 
-    def __init__(self, **kwargs):
+    def __init__(self, devnull=None, **kwargs):
         """
         Use keyword arguments to overwrite
         any of the class attributes for this instance.
@@ -64,6 +65,10 @@ class Environment:
         """
         assert all(hasattr(type(self), attr) for attr in kwargs.keys())
         self.__dict__.update(**kwargs)
+
+        # The original STDERR unaffected by --quiet’ing.
+        self._orig_stderr = self.stderr
+        self._devnull = devnull
 
         # Keyword arguments > stream.encoding > default utf8
         if self.stdin and self.stdin_encoding is None:
@@ -108,6 +113,16 @@ class Environment:
                     self.log_error(e, level='warning')
         return config
 
+    @property
+    def devnull(self) -> IO:
+        if self._devnull is None:
+            self._devnull = open(os.devnull, 'w+')
+        return self._devnull
+
+    @devnull.setter
+    def devnull(self, value):
+        self._devnull = value
+
     def log_error(self, msg, level='error'):
         assert level in ['error', 'warning']
-        self.stderr.write(f'\n{self.program_name}: {level}: {msg}\n\n')
+        self._orig_stderr.write(f'\n{self.program_name}: {level}: {msg}\n\n')

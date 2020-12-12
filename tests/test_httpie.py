@@ -4,14 +4,13 @@ from unittest import mock
 
 import pytest
 
+import httpie
 import httpie.__main__
+from fixtures import FILE_CONTENT, FILE_PATH
+from httpie.cli.exceptions import ParseError
 from httpie.context import Environment
 from httpie.status import ExitStatus
-from httpie.cli.exceptions import ParseError
-from utils import MockEnvironment, http, HTTP_OK
-from fixtures import FILE_PATH, FILE_CONTENT
-
-import httpie
+from utils import HTTP_OK, MockEnvironment, StdinBytesIO, http
 
 
 def test_main_entry_point():
@@ -46,7 +45,6 @@ def test_help():
 def test_version():
     r = http('--version', tolerate_error_exit_status=True)
     assert r.exit_status == ExitStatus.SUCCESS
-    # FIXME: py3 has version in stdout, py2 in stderr
     assert httpie.__version__ == r.strip()
 
 
@@ -100,19 +98,23 @@ def test_POST_form(httpbin_both):
 def test_POST_form_multiple_values(httpbin_both):
     r = http('--form', 'POST', httpbin_both + '/post', 'foo=bar', 'foo=baz')
     assert HTTP_OK in r
-    assert r.json['form'] == {'foo': ['bar', 'baz']}
+    assert r.json['form'] == {
+        'foo': ['bar', 'baz']
+    }
 
 
 def test_POST_stdin(httpbin_both):
-    with open(FILE_PATH) as f:
-        env = MockEnvironment(stdin=f, stdin_isatty=False)
-        r = http('--form', 'POST', httpbin_both + '/post', env=env)
+    env = MockEnvironment(
+        stdin=StdinBytesIO(FILE_PATH.read_bytes()),
+        stdin_isatty=False,
+    )
+    r = http('--form', 'POST', httpbin_both + '/post', env=env)
     assert HTTP_OK in r
     assert FILE_CONTENT in r
 
 
 def test_POST_file(httpbin_both):
-    r = http('--form', 'POST', httpbin_both + '/post', 'file@' + FILE_PATH)
+    r = http('--form', 'POST', httpbin_both + '/post', f'file@{FILE_PATH}')
     assert HTTP_OK in r
     assert FILE_CONTENT in r
 
@@ -127,10 +129,10 @@ def test_form_POST_file_redirected_stdin(httpbin):
             '--form',
             'POST',
             httpbin + '/post',
-            'file@' + FILE_PATH,
+            f'file@{FILE_PATH}',
             tolerate_error_exit_status=True,
             env=MockEnvironment(
-                stdin=f,
+                stdin=StdinBytesIO(FILE_PATH.read_bytes()),
                 stdin_isatty=False,
             ),
         )
@@ -150,7 +152,7 @@ def test_headers_unset(httpbin_both):
     assert 'Accept' in r.json['headers']  # default Accept present
 
     r = http('GET', httpbin_both + '/headers', 'Accept:')
-    assert 'Accept' not in r.json['headers']   # default Accept unset
+    assert 'Accept' not in r.json['headers']  # default Accept unset
 
 
 @pytest.mark.skip('unimplemented')
@@ -159,7 +161,7 @@ def test_unset_host_header(httpbin_both):
     assert 'Host' in r.json['headers']  # default Host present
 
     r = http('GET', httpbin_both + '/headers', 'Host:')
-    assert 'Host' not in r.json['headers']   # default Host unset
+    assert 'Host' not in r.json['headers']  # default Host unset
 
 
 def test_headers_empty_value(httpbin_both):
@@ -167,7 +169,7 @@ def test_headers_empty_value(httpbin_both):
     assert r.json['headers']['Accept']  # default Accept has value
 
     r = http('GET', httpbin_both + '/headers', 'Accept;')
-    assert r.json['headers']['Accept'] == ''   # Accept has no value
+    assert r.json['headers']['Accept'] == ''  # Accept has no value
 
 
 def test_headers_empty_value_with_value_gives_error(httpbin):
@@ -180,22 +182,4 @@ def test_json_input_preserve_order(httpbin_both):
              'order:={"map":{"1":"first","2":"second"}}')
     assert HTTP_OK in r
     assert r.json['data'] == \
-        '{"order": {"map": {"1": "first", "2": "second"}}}'
-
-
-def test_offline():
-    r = http(
-        '--offline',
-        'https://this-should.never-resolve/foo',
-    )
-    assert 'GET /foo' in r
-
-
-def test_offline_download():
-    """Absence of response should be handled gracefully with --download"""
-    r = http(
-        '--offline',
-        '--download',
-        'https://this-should.never-resolve/foo',
-    )
-    assert 'GET /foo' in r
+           '{"order": {"map": {"1": "first", "2": "second"}}}'
