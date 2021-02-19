@@ -54,6 +54,21 @@ class TestQuietFlag:
         assert r == ''
         assert r.stderr == ''
 
+    def test_quiet_with_check_status_non_zero(self, httpbin):
+        r = http(
+            '--quiet', '--check-status', httpbin + '/status/500',
+            tolerate_error_exit_status=True,
+        )
+        assert 'http: warning: HTTP 500' in r.stderr
+
+    def test_quiet_with_check_status_non_zero_pipe(self, httpbin):
+        r = http(
+            '--quiet', '--check-status', httpbin + '/status/500',
+            tolerate_error_exit_status=True,
+            env=MockEnvironment(stdout_isatty=False)
+        )
+        assert 'http: warning: HTTP 500' in r.stderr
+
     @mock.patch('httpie.cli.argtypes.AuthCredentials._getpass',
                 new=lambda self, prompt: 'password')
     def test_quiet_with_password_prompt(self, httpbin):
@@ -127,7 +142,7 @@ class TestVerboseFlag:
         assert r.count('__test__') == 2
 
     def test_verbose_form(self, httpbin):
-        # https://github.com/jakubroztocil/httpie/issues/53
+        # https://github.com/httpie/httpie/issues/53
         r = http('--verbose', '--form', 'POST', httpbin.url + '/post',
                  'A=B', 'C=D')
         assert HTTP_OK in r

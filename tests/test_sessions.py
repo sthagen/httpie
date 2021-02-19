@@ -16,6 +16,7 @@ from httpie.sessions import Session
 from httpie.utils import get_expired_cookies
 from tests.test_auth_plugins import basic_auth
 from utils import HTTP_OK, MockEnvironment, http, mk_config_dir
+from fixtures import FILE_PATH_ARG
 
 
 class SessionTestBase:
@@ -161,6 +162,12 @@ class TestSession(SessionTestBase):
         assert 'Content-Type' not in r2.json['headers']
         assert 'If-Unmodified-Since' not in r2.json['headers']
 
+    def test_session_with_upload(self, httpbin):
+        self.start_session(httpbin)
+        r = http('--session=test', '--form', '--verbose', 'POST', httpbin.url + '/post',
+                 f'test-file@{FILE_PATH_ARG}', 'foo=bar', env=self.env())
+        assert HTTP_OK in r
+
     def test_session_by_path(self, httpbin):
         self.start_session(httpbin)
         session_path = self.config_dir / 'session-by-path.json'
@@ -193,7 +200,7 @@ class TestSession(SessionTestBase):
 
     def test_session_default_header_value_overwritten(self, httpbin):
         self.start_session(httpbin)
-        # https://github.com/jakubroztocil/httpie/issues/180
+        # https://github.com/httpie/httpie/issues/180
         r1 = http('--session=test',
                   httpbin.url + '/headers', 'User-Agent:custom',
                   env=self.env())
@@ -205,7 +212,7 @@ class TestSession(SessionTestBase):
         assert r2.json['headers']['User-Agent'] == 'custom'
 
     def test_download_in_session(self, httpbin):
-        # https://github.com/jakubroztocil/httpie/issues/412
+        # https://github.com/httpie/httpie/issues/412
         self.start_session(httpbin)
         cwd = os.getcwd()
         os.chdir(gettempdir())
@@ -337,6 +344,15 @@ class TestExpiredCookies(CookieTestBase):
         updated_session = json.loads(self.session_path.read_text())
         assert 'cookie1' in updated_session['cookies']
         assert 'cookie2' not in updated_session['cookies']
+
+    def test_get_expired_cookies_using_max_age(self):
+        headers = [
+            ('Set-Cookie', 'one=two; Max-Age=0; path=/; domain=.tumblr.com; HttpOnly')
+        ]
+        expected_expired = [
+            {'name': 'one', 'path': '/'}
+        ]
+        assert get_expired_cookies(headers, now=None) == expected_expired
 
     @pytest.mark.parametrize(
         argnames=['headers', 'now', 'expected_expired'],

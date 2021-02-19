@@ -39,7 +39,7 @@ def test_debug():
 def test_help():
     r = http('--help', tolerate_error_exit_status=True)
     assert r.exit_status == ExitStatus.SUCCESS
-    assert 'https://github.com/jakubroztocil/httpie/issues' in r
+    assert 'https://github.com/httpie/httpie/issues' in r
 
 
 def test_version():
@@ -121,7 +121,7 @@ def test_POST_file(httpbin_both):
 
 def test_form_POST_file_redirected_stdin(httpbin):
     """
-    <https://github.com/jakubroztocil/httpie/issues/840>
+    <https://github.com/httpie/httpie/issues/840>
 
     """
     with open(FILE_PATH) as f:
@@ -182,4 +182,4 @@ def test_json_input_preserve_order(httpbin_both):
              'order:={"map":{"1":"first","2":"second"}}')
     assert HTTP_OK in r
     assert r.json['data'] == \
-           '{"order": {"map": {"1": "first", "2": "second"}}}'
+        '{"order": {"map": {"1": "first", "2": "second"}}}'

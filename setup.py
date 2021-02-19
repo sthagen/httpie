@@ -15,6 +15,7 @@ class PyTest(TestCommand):
     and runs the tests with no fancy stuff like parallel execution.
 
     """
+
     def finalize_options(self):
         TestCommand.finalize_options(self)
         self.test_args = [
@@ -111,6 +112,5 @@ setup(
         'Twitter': 'https://twitter.com/httpie',
         'Documentation': 'https://httpie.org/docs',
         'Online Demo': 'https://httpie.org/run',
-        'Donate': 'https://httpie.org/donate',
     },
 )
