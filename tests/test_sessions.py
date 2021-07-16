@@ -1,22 +1,19 @@
-# coding=utf-8
 import json
 import os
 import shutil
 from datetime import datetime
-from mock import mock
-from tempfile import gettempdir
+from unittest import mock
 
 import pytest
 
-from fixtures import UNICODE
+from .fixtures import FILE_PATH_ARG, UNICODE
 from httpie.plugins import AuthPlugin
 from httpie.plugins.builtin import HTTPBasicAuth
 from httpie.plugins.registry import plugin_manager
 from httpie.sessions import Session
 from httpie.utils import get_expired_cookies
-from tests.test_auth_plugins import basic_auth
-from utils import HTTP_OK, MockEnvironment, http, mk_config_dir
-from fixtures import FILE_PATH_ARG
+from .test_auth_plugins import basic_auth
+from .utils import HTTP_OK, MockEnvironment, http, mk_config_dir
 
 
 class SessionTestBase:
@@ -183,8 +180,8 @@ class TestSession(SessionTestBase):
     def test_session_unicode(self, httpbin):
         self.start_session(httpbin)
 
-        r1 = http('--session=test', u'--auth=test:' + UNICODE,
-                  'GET', httpbin.url + '/get', u'Test:%s' % UNICODE,
+        r1 = http('--session=test', f'--auth=test:{UNICODE}',
+                  'GET', httpbin.url + '/get', f'Test:{UNICODE}',
                   env=self.env())
         assert HTTP_OK in r1
 
@@ -194,7 +191,7 @@ class TestSession(SessionTestBase):
 
         # FIXME: Authorization *sometimes* is not present on Python3
         assert (r2.json['headers']['Authorization']
-                == HTTPBasicAuth.make_header(u'test', UNICODE))
+                == HTTPBasicAuth.make_header('test', UNICODE))
         # httpbin doesn't interpret utf8 headers
         assert UNICODE in r2
 
@@ -211,11 +208,11 @@ class TestSession(SessionTestBase):
         assert HTTP_OK in r2
         assert r2.json['headers']['User-Agent'] == 'custom'
 
-    def test_download_in_session(self, httpbin):
+    def test_download_in_session(self, tmp_path, httpbin):
         # https://github.com/httpie/httpie/issues/412
         self.start_session(httpbin)
         cwd = os.getcwd()
-        os.chdir(gettempdir())
+        os.chdir(tmp_path)
         try:
             http('--session=test', '--download',
                  httpbin.url + '/get', env=self.env())
@@ -346,22 +343,17 @@ class TestExpiredCookies(CookieTestBase):
         assert 'cookie2' not in updated_session['cookies']
 
     def test_get_expired_cookies_using_max_age(self):
-        headers = [
-            ('Set-Cookie', 'one=two; Max-Age=0; path=/; domain=.tumblr.com; HttpOnly')
-        ]
+        cookies = 'one=two; Max-Age=0; path=/; domain=.tumblr.com; HttpOnly'
         expected_expired = [
             {'name': 'one', 'path': '/'}
         ]
-        assert get_expired_cookies(headers, now=None) == expected_expired
+        assert get_expired_cookies(cookies, now=None) == expected_expired
 
     @pytest.mark.parametrize(
-        argnames=['headers', 'now', 'expected_expired'],
+        argnames=['cookies', 'now', 'expected_expired'],
         argvalues=[
             (
-                [
-                    ('Set-Cookie', 'hello=world; Path=/; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly'),
-                    ('Connection', 'keep-alive')
-                ],
+                'hello=world; Path=/; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly',
                 None,
                 [
                     {
@@ -371,11 +363,10 @@ class TestExpiredCookies(CookieTestBase):
                 ]
             ),
             (
-                [
-                    ('Set-Cookie', 'hello=world; Path=/; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly'),
-                    ('Set-Cookie', 'pea=pod; Path=/ab; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly'),
-                    ('Connection', 'keep-alive')
-                ],
+                (
+                    'hello=world; Path=/; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly, '
+                    'pea=pod; Path=/ab; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly'
+                ),
                 None,
                 [
                     {'name': 'hello', 'path': '/'},
@@ -385,24 +376,19 @@ class TestExpiredCookies(CookieTestBase):
             (
                 # Checks we gracefully ignore expires date in invalid format.
                 # <https://github.com/httpie/httpie/issues/963>
-                [
-                    ('Set-Cookie', 'pfg=; Expires=Sat, 19-Sep-2020 06:58:14 GMT+0000; Max-Age=0; path=/; domain=.tumblr.com; secure; HttpOnly'),
-                ],
+                'pfg=; Expires=Sat, 19-Sep-2020 06:58:14 GMT+0000; Max-Age=0; path=/; domain=.tumblr.com; secure; HttpOnly',
                 None,
                 []
             ),
             (
-                [
-                    ('Set-Cookie', 'hello=world; Path=/; Expires=Fri, 12 Jun 2020 12:28:55 GMT; HttpOnly'),
-                    ('Connection', 'keep-alive')
-                ],
+                'hello=world; Path=/; Expires=Fri, 12 Jun 2020 12:28:55 GMT; HttpOnly',
                 datetime(2020, 6, 11).timestamp(),
                 []
             ),
         ]
     )
-    def test_get_expired_cookies_manages_multiple_cookie_headers(self, headers, now, expected_expired):
-        assert get_expired_cookies(headers, now=now) == expected_expired
+    def test_get_expired_cookies_manages_multiple_cookie_headers(self, cookies, now, expected_expired):
+        assert get_expired_cookies(cookies, now=now) == expected_expired
 
 
 class TestCookieStorage(CookieTestBase):
@@ -444,7 +430,7 @@ class TestCookieStorage(CookieTestBase):
             'Cookie:' + new_cookies,
         )
         # Note: cookies in response are in alphabetical order
-        assert 'Cookie: ' + expected in r
+        assert f'Cookie: {expected}' in r
 
         updated_session = json.loads(self.session_path.read_text())
         for name, value in new_cookies_dict.items():
@@ -482,7 +468,7 @@ class TestCookieStorage(CookieTestBase):
         2. command line arg
         3. cookie already stored in session file
         """
-        r = http(
+        http(
             '--session', str(self.session_path),
             httpbin.url + set_cookie,
             'Cookie:' + cli_cookie,

@@ -1,5 +1,3 @@
-from __future__ import division
-
 import json
 import mimetypes
 import time
@@ -7,8 +5,11 @@ from collections import OrderedDict
 from http.cookiejar import parse_ns_headers
 from pprint import pformat
 from typing import List, Optional, Tuple
+import re
 
 import requests.auth
+
+RE_COOKIE_SPLIT = re.compile(r', (?=[^ ;]+=)')
 
 
 def load_json_preserve_order(s):
@@ -24,8 +25,6 @@ def humanize_bytes(n, precision=2):
     # Licence: MIT
     # URL: https://code.activestate.com/recipes/577081/
     """Return a humanized string representation of a number of bytes.
-
-    Assumes `from __future__ import division`.
 
     >>> humanize_bytes(1)
     '1 B'
@@ -62,7 +61,7 @@ def humanize_bytes(n, precision=2):
             break
 
     # noinspection PyUnboundLocalVariable
-    return '%.*f %s' % (precision, n / factor, suffix)
+    return f'{n / factor:.{precision}f} {suffix}'
 
 
 class ExplicitNullAuth(requests.auth.AuthBase):
@@ -85,12 +84,25 @@ def get_content_type(filename):
     if mime:
         content_type = mime
         if encoding:
-            content_type = '%s; charset=%s' % (mime, encoding)
+            content_type = f'{mime}; charset={encoding}'
         return content_type
 
 
+def split_cookies(cookies):
+    """
+    When ``requests`` stores cookies in ``response.headers['Set-Cookie']``
+    it concatenates all of them through ``, ``.
+
+    This function splits cookies apart being careful to not to
+    split on ``, `` which may be part of cookie value.
+    """
+    if not cookies:
+        return []
+    return RE_COOKIE_SPLIT.split(cookies)
+
+
 def get_expired_cookies(
-    headers: List[Tuple[str, str]],
+    cookies: str,
     now: float = None
 ) -> List[dict]:
 
@@ -100,9 +112,9 @@ def get_expired_cookies(
         return expires is not None and expires <= now
 
     attr_sets: List[Tuple[str, str]] = parse_ns_headers(
-        value for name, value in headers
-        if name.lower() == 'set-cookie'
+        split_cookies(cookies)
     )
+
     cookies = [
         # The first attr name is the cookie name.
         dict(attrs[1:], name=attrs[0][0])

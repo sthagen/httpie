@@ -9,7 +9,11 @@ This project adheres to `Semantic Versioning <https://semver.org/>`_.
 
 `2.5.0-dev`_ (unreleased)
 -------------------------
+* Added ``--raw`` to allow specifying the raw request body without extra processing as
+  an alternative to ``stdin``. (`#534`_)
 * Fixed ``--continue --download`` with a single byte to be downloaded left. (`#1032`_)
+* Fixed ``--verbose`` HTTP 307 redirects with streamed request body. (`#1088`_)
+* Add internal support for file-like object responses to improve adapter plugin support. (`#1094`_)
 
 
 `2.4.0`_ (2021-02-06)
@@ -172,7 +176,7 @@ This project adheres to `Semantic Versioning <https://semver.org/>`_.
 * Added fish shell completion (located in ``extras/httpie-completion.fish``
   in the GitHub repo).
 * Updated ``requests`` to 2.10.0 so that SOCKS support can be added via
-  ``pip install requests[socks]``.
+  ``python -m pip install requests[socks]``.
 * Changed the default JSON ``Accept`` header from ``application/json``
   to ``application/json, */*``.
 * Changed the pre-processing of request HTTP headers so that any leading
@@ -475,6 +479,7 @@ This project adheres to `Semantic Versioning <https://semver.org/>`_.
 .. _#128: https://github.com/httpie/httpie/issues/128
 .. _#201: https://github.com/httpie/httpie/issues/201
 .. _#488: https://github.com/httpie/httpie/issues/488
+.. _#534: https://github.com/httpie/httpie/issues/534
 .. _#668: https://github.com/httpie/httpie/issues/668
 .. _#684: https://github.com/httpie/httpie/issues/684
 .. _#718: https://github.com/httpie/httpie/issues/718
@@ -498,3 +503,4 @@ This project adheres to `Semantic Versioning <https://semver.org/>`_.
 .. _#1026: https://github.com/httpie/httpie/issues/1026
 .. _#1029: https://github.com/httpie/httpie/issues/1029
 .. _#1032: https://github.com/httpie/httpie/issues/1032
+.. _#1088: https://github.com/httpie/httpie/issues/1088

@@ -1,6 +1,8 @@
 from typing import Iterable, Optional
 from urllib.parse import urlsplit
 
+from .utils import split_cookies
+
 
 class HTTPMessage:
     """Abstract class for HTTP messages."""
@@ -52,27 +54,30 @@ class HTTPResponse(HTTPMessage):
     # noinspection PyProtectedMember
     @property
     def headers(self):
-        original = self._orig.raw._original_response
-
+        try:
+            raw_version = self._orig.raw._original_response.version
+        except AttributeError:
+            # Assume HTTP/1.1
+            raw_version = 11
         version = {
             9: '0.9',
             10: '1.0',
             11: '1.1',
             20: '2',
-        }[original.version]
+        }[raw_version]
 
-        status_line = f'HTTP/{version} {original.status} {original.reason}'
+        original = self._orig
+        status_line = f'HTTP/{version} {original.status_code} {original.reason}'
         headers = [status_line]
-        try:
-            # `original.msg` is a `http.client.HTTPMessage` on Python 3
-            # `_headers` is a 2-tuple
-            headers.extend(
-                '%s: %s' % header for header in original.msg._headers)
-        except AttributeError:
-            # and a `httplib.HTTPMessage` on Python 2.x
-            # `headers` is a list of `name: val<CRLF>`.
-            headers.extend(h.strip() for h in original.msg.headers)
-
+        headers.extend(
+            ': '.join(header)
+            for header in original.headers.items()
+            if header[0] != 'Set-Cookie'
+        )
+        headers.extend(
+            f'Set-Cookie: {cookie}'
+            for cookie in split_cookies(original.headers.get('Set-Cookie'))
+        )
         return '\r\n'.join(headers)
 
     @property
@@ -102,7 +107,7 @@ class HTTPRequest(HTTPMessage):
         request_line = '{method} {path}{query} HTTP/1.1'.format(
             method=self._orig.method,
             path=url.path or '/',
-            query='?' + url.query if url.query else ''
+            query=f'?{url.query}' if url.query else ''
         )
 
         headers = dict(self._orig.headers)
@@ -110,19 +115,12 @@ class HTTPRequest(HTTPMessage):
             headers['Host'] = url.netloc.split('@')[-1]
 
         headers = [
-            '%s: %s' % (
-                name,
-                value if isinstance(value, str) else value.decode('utf8')
-            )
+            f'{name}: {value if isinstance(value, str) else value.decode("utf-8")}'
             for name, value in headers.items()
         ]
 
         headers.insert(0, request_line)
         headers = '\r\n'.join(headers).strip()
-
-        if isinstance(headers, bytes):
-            # Python < 3
-            headers = headers.decode('utf8')
         return headers
 
     @property

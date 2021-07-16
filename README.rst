@@ -128,9 +128,8 @@ system package manager, for example:
 Windows, etc.
 -------------
 
-A universal installation method (that works on Windows, Mac OS X, Linux, …,
+A universal installation method (that works on Windows, macOS, Linux, …,
 and always provides the latest version) is to use `pip`_:
-
 
 .. code-block:: bash
 
@@ -142,6 +141,12 @@ and always provides the latest version) is to use `pip`_:
 
 (If ``pip`` installation fails for some reason, you can try
 ``easy_install httpie`` as a fallback.)
+
+Windows users can also install HTTPie with `Chocolatey <https://chocolatey.org>`_:
+
+.. code-block:: bash
+
+    $ choco upgrade httpie
 
 
 Python version
@@ -175,7 +180,7 @@ Otherwise with ``pip``:
 
 .. code-block:: bash
 
-    $ pip install --upgrade https://github.com/httpie/httpie/archive/master.tar.gz
+    $ python -m pip install --upgrade https://github.com/httpie/httpie/archive/master.tar.gz
 
 
 Verify that now we have the
@@ -197,7 +202,7 @@ Hello World:
 
 .. code-block:: bash
 
-    $ https httpie.io/hello
+    $ http httpie.io/hello
 
 
 Synopsis:
@@ -499,8 +504,8 @@ their type is distinguished only by the separator used:
 +------------------------------+---------------------------------------------------+
 
 
-Note that data fields aren’t the only way to specify request data:
-`Redirected input`_ is a mechanism for passing arbitrary request data.
+Note that the structured data fields aren’t the only way to specify request data:
+The `raw request body`_ section describes mechanisms for passing arbitrary request data.
 
 
 Escaping rules
@@ -632,21 +637,24 @@ fields using ``=@`` and ``:=@``:
 Raw and complex JSON
 --------------------
 
-Please note that with the `request items`_ data field syntax, commands
+Please note that with the structured `request items`_ data field syntax, commands
 can quickly become unwieldy when sending complex structures.
-In such cases, it’s better to pass the full raw JSON data via
-`redirected input`_, for example:
+In such cases, it’s better to pass the full raw JSON data as a `raw request body`_, for example:
 
 .. code-block:: bash
 
-    $ echo '{"hello": "world"}' | http POST pie.dev/post
+    $ echo -n '{"hello": "world"}' | http POST pie.dev/post
+
+.. code-block:: bash
+
+    $ http --raw '{"hello": "world"}' POST pie.dev/post
 
 .. code-block:: bash
 
     $ http POST pie.dev/post < files/data.json
 
-Furthermore, this syntax only allows you to send an object as the JSON document, but not an array, etc.
-Here, again, the solution is to use `redirected input`_.
+Furthermore, the structure syntax only allows you to send an object as the JSON document, but not an array, etc.
+Here, again, the solution is to use a `raw request body`_.
 
 Forms
 =====
@@ -1068,6 +1076,10 @@ and show the final response instead, use the ``--follow, -F`` option:
     $ http --follow pie.dev/redirect/3
 
 
+With ``307 Temporary Redirect`` and ``308 Permanent Redirect``, the method and the body of the original request
+are reused to perform the redirected request. Otherwise, a body-less ``GET`` request is performed.
+
+
 Showing intermediary redirect responses
 ---------------------------------------
 
@@ -1353,8 +1365,20 @@ which you don’t care about. The response headers are downloaded always,
 even if they are not part of the output
 
 
-Redirected Input
+Raw request body
 ================
+
+In addition to crafting structured `JSON`_ and `forms`_ requests with the
+`request items`_ syntax, you can provide a raw request body that will be
+sent without further processing. These two approaches for specifying request
+data (i.e., structured and raw) cannot be combined.
+
+There’re three methods for passing raw request data: piping via ``stdin``,
+``--raw='data'``, and ``@/file/path``.
+
+
+Redirected Input
+----------------
 
 The universal method for passing request data is through redirected ``stdin``
 (standard input)—piping.
@@ -1384,7 +1408,7 @@ You can use ``echo`` for simple data:
 
 .. code-block:: bash
 
-    $ echo '{"name": "John"}' | http PATCH pie.dev/patch X-API-Token:123
+    $ echo -n '{"name": "John"}' | http PATCH pie.dev/patch X-API-Token:123
 
 
 You can also use a Bash *here string*:
@@ -1428,14 +1452,29 @@ On OS X, you can send the contents of the clipboard with ``pbpaste``:
 Passing data through ``stdin`` cannot be combined with data fields specified
 on the command line:
 
-
 .. code-block:: bash
 
-    $ echo 'data' | http POST example.org more=data   # This is invalid
+    $ echo -n 'data' | http POST example.org more=data   # This is invalid
 
 
 To prevent HTTPie from reading ``stdin`` data you can use the
 ``--ignore-stdin`` option.
+
+
+Request data via ``--raw``
+--------------------------
+
+In a situation when piping data via ``stdin`` is not convenient (for example,
+when generating API docs examples), you can specify the raw request body via
+the ``--raw`` option.
+
+.. code-block:: bash
+
+    $ http --raw 'Hello, world!' pie.dev/post
+
+.. code-block:: bash
+
+    $ http --raw '{"name": "John"}' pie.dev/post
 
 
 Request data from a filename
