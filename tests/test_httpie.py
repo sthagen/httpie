@@ -9,6 +9,7 @@ import httpie.__main__
 from .fixtures import FILE_CONTENT, FILE_PATH
 from httpie.cli.exceptions import ParseError
 from httpie.context import Environment
+from httpie.encoding import UTF8
 from httpie.status import ExitStatus
 from .utils import HTTP_OK, MockEnvironment, StdinBytesIO, http
 
@@ -16,18 +17,14 @@ from .utils import HTTP_OK, MockEnvironment, StdinBytesIO, http
 def test_main_entry_point():
     # Patch stdin to bypass pytest capture
     with mock.patch.object(Environment, 'stdin', io.StringIO()):
-        with pytest.raises(SystemExit) as e:
-            httpie.__main__.main()
-        assert e.value.code == ExitStatus.ERROR
+        assert httpie.__main__.main() == ExitStatus.ERROR.value
 
 
 @mock.patch('httpie.core.main')
 def test_main_entry_point_keyboard_interrupt(main):
     main.side_effect = KeyboardInterrupt()
     with mock.patch.object(Environment, 'stdin', io.StringIO()):
-        with pytest.raises(SystemExit) as e:
-            httpie.__main__.main()
-        assert e.value.code == ExitStatus.ERROR_CTRL_C
+        assert httpie.__main__.main() == ExitStatus.ERROR_CTRL_C.value
 
 
 def test_debug():
@@ -130,7 +127,7 @@ def test_form_POST_file_redirected_stdin(httpbin):
     <https://github.com/httpie/httpie/issues/840>
 
     """
-    with open(FILE_PATH):
+    with open(FILE_PATH, encoding=UTF8):
         r = http(
             '--form',
             'POST',

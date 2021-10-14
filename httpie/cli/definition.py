@@ -9,7 +9,7 @@ from .. import __doc__, __version__
 from .argparser import HTTPieArgumentParser
 from .argtypes import (
     KeyValueArgType, SessionNameValidator,
-    readable_file_arg,
+    readable_file_arg, response_charset_type, response_mime_type,
 )
 from .constants import (
     DEFAULT_FORMAT_OPTIONS, OUTPUT_OPTIONS,
@@ -30,7 +30,7 @@ from ..ssl import AVAILABLE_SSL_VERSION_ARG_MAPPING, DEFAULT_SSL_CIPHERS
 
 parser = HTTPieArgumentParser(
     prog='http',
-    description=f'{__doc__.strip()} <https://httpie.org>',
+    description=f'{__doc__.strip()} <https://httpie.io>',
     epilog=dedent('''
     For every --OPTION there is also a --no-OPTION that reverts OPTION
     to its default value.
@@ -96,7 +96,7 @@ positional.add_argument(
 
     ':' HTTP headers:
 
-        Referer:http://httpie.org  Cookie:foo=bar  User-Agent:bacon/1.0
+        Referer:https://httpie.io  Cookie:foo=bar  User-Agent:bacon/1.0
 
     '==' URL parameters to be appended to the request URI:
 
@@ -252,7 +252,7 @@ output_processing.add_argument(
     dest='style',
     metavar='STYLE',
     default=DEFAULT_STYLE,
-    choices=AVAILABLE_STYLES,
+    choices=sorted(AVAILABLE_STYLES),
     help='''
     Output coloring style (default is "{default}"). It can be One of:
 
@@ -309,6 +309,31 @@ output_processing.add_argument(
     '''
 )
 
+output_processing.add_argument(
+    '--response-charset',
+    metavar='ENCODING',
+    type=response_charset_type,
+    help='''
+    Override the response encoding for terminal display purposes, e.g.:
+
+        --response-charset=utf8
+        --response-charset=big5
+
+    '''
+)
+
+output_processing.add_argument(
+    '--response-mime',
+    metavar='MIME_TYPE',
+    type=response_mime_type,
+    help='''
+    Override the response mime type for coloring and formatting for the terminal, e.g.:
+
+        --response-mime=application/json
+        --response-mime=text/xml
+
+    '''
+)
 
 output_processing.add_argument(
     '--format-options',
@@ -472,12 +497,14 @@ output_options.add_argument(
 
 output_options.add_argument(
     '--quiet', '-q',
-    action='store_true',
-    default=False,
+    action='count',
+    default=0,
     help='''
-    Do not print to stdout or stderr.
+    Do not print to stdout or stderr, except for errors and warnings when provided once.
+    Provide twice to suppress warnings as well.
     stdout is still redirected if --output is specified.
     Flag doesn't affect behaviour of download beyond not printing to terminal.
+
     '''
 )
 
@@ -686,9 +713,11 @@ network.add_argument(
     '--chunked',
     default=False,
     action='store_true',
-    help="""
+    help='''
+    Enable streaming via chunked transfer encoding.
+    The Transfer-Encoding header is set to chunked.
 
-    """
+    '''
 )
 
 #######################################################################

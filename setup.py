@@ -1,17 +1,17 @@
 # This is purely the result of trial and error.
 
 import sys
-import codecs
 
 from setuptools import setup, find_packages
 
 import httpie
 
+
 # Note: keep requirements here to ease distributions packaging
 tests_require = [
-    'docutils',
     'pytest',
     'pytest-httpbin>=0.0.6',
+    'responses',
 ]
 dev_require = [
     *tests_require,
@@ -20,11 +20,16 @@ dev_require = [
     'flake8-deprecated',
     'flake8-mutable',
     'flake8-tuple',
+    'pyopenssl',
     'pytest-cov',
+    'pyyaml',
     'twine',
     'wheel',
+    'Jinja2'
 ]
 install_requires = [
+    'charset_normalizer>=2.0.0',
+    'defusedxml>=0.6.0',
     'requests[socks]>=2.22.0',
     'Pygments>=2.5.2',
     'requests-toolbelt>=0.9.1',
@@ -54,7 +59,7 @@ extras_require = {
 
 
 def long_description():
-    with codecs.open('README.rst', encoding='utf8') as f:
+    with open('README.md', encoding='utf-8') as f:
         return f.read()
 
 
@@ -63,8 +68,8 @@ setup(
     version=httpie.__version__,
     description=httpie.__doc__.strip(),
     long_description=long_description(),
-    long_description_content_type='text/x-rst',
-    url='https://httpie.org/',
+    long_description_content_type='text/markdown',
+    url='https://httpie.io/',
     download_url=f'https://github.com/httpie/httpie/archive/{httpie.__version__}.tar.gz',
     author=httpie.__author__,
     author_email='jakub@roztocil.co',
@@ -97,7 +102,8 @@ setup(
     project_urls={
         'GitHub': 'https://github.com/httpie/httpie',
         'Twitter': 'https://twitter.com/httpie',
-        'Documentation': 'https://httpie.org/docs',
-        'Online Demo': 'https://httpie.org/run',
+        'Discord': 'https://httpie.io/discord',
+        'Documentation': 'https://httpie.io/docs',
+        'Online Demo': 'https://httpie.io/run',
     },
 )

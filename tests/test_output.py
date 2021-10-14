@@ -9,15 +9,18 @@ from urllib.request import urlopen
 
 import pytest
 import requests
+import responses
 
 from httpie.cli.argtypes import (
     PARSED_DEFAULT_FORMAT_OPTIONS,
     parse_format_options,
 )
 from httpie.cli.definition import parser
+from httpie.encoding import UTF8
 from httpie.output.formatters.colors import get_lexer
 from httpie.status import ExitStatus
-from .utils import COLOR, CRLF, HTTP_OK, MockEnvironment, http
+from .fixtures import XML_DATA_RAW, XML_DATA_FORMATTED
+from .utils import COLOR, CRLF, HTTP_OK, MockEnvironment, http, DUMMY_URL
 
 
 @pytest.mark.parametrize('stdout_isatty', [True, False])
@@ -30,21 +33,22 @@ def test_output_option(tmp_path, httpbin, stdout_isatty):
     assert r == ''
 
     expected_body = urlopen(url).read().decode()
-    actual_body = output_filename.read_text()
+    actual_body = output_filename.read_text(encoding=UTF8)
 
     assert actual_body == expected_body
 
 
 class TestQuietFlag:
+    QUIET_SCENARIOS = [('--quiet',), ('-q',), ('--quiet', '--quiet'), ('-qq',)]
 
-    @pytest.mark.parametrize('argument_name', ['--quiet', '-q'])
-    def test_quiet(self, httpbin, argument_name):
+    @pytest.mark.parametrize('quiet_flags', QUIET_SCENARIOS)
+    def test_quiet(self, httpbin, quiet_flags):
         env = MockEnvironment(
             stdin_isatty=True,
             stdout_isatty=True,
             devnull=io.BytesIO()
         )
-        r = http(argument_name, 'GET', httpbin.url + '/get', env=env)
+        r = http(*quiet_flags, 'GET', httpbin.url + '/get', env=env)
         assert env.stdout is env.devnull
         assert env.stderr is env.devnull
         assert HTTP_OK in r.devnull
@@ -66,9 +70,25 @@ class TestQuietFlag:
         )
         assert 'http: warning: HTTP 500' in r.stderr
 
+    def test_quiet_quiet_with_check_status_non_zero(self, httpbin):
+        r = http(
+            '--quiet', '--quiet', '--check-status', httpbin + '/status/500',
+            tolerate_error_exit_status=True,
+        )
+        assert not r.stderr
+
+    def test_quiet_quiet_with_check_status_non_zero_pipe(self, httpbin):
+        r = http(
+            '--quiet', '--quiet', '--check-status', httpbin + '/status/500',
+            tolerate_error_exit_status=True,
+            env=MockEnvironment(stdout_isatty=False)
+        )
+        assert 'http: warning: HTTP 500' in r.stderr
+
+    @pytest.mark.parametrize('quiet_flags', QUIET_SCENARIOS)
     @mock.patch('httpie.cli.argtypes.AuthCredentials._getpass',
                 new=lambda self, prompt: 'password')
-    def test_quiet_with_password_prompt(self, httpbin):
+    def test_quiet_with_password_prompt(self, httpbin, quiet_flags):
         """
         Tests whether httpie still prompts for a password when request
         requires authentication and only username is provided
@@ -80,7 +100,7 @@ class TestQuietFlag:
             devnull=io.BytesIO()
         )
         r = http(
-            '--quiet', '--auth', 'user', 'GET',
+            *quiet_flags, '--auth', 'user', 'GET',
             httpbin.url + '/basic-auth/user/password',
             env=env
         )
@@ -90,17 +110,19 @@ class TestQuietFlag:
         assert r == ''
         assert r.stderr == ''
 
-    @pytest.mark.parametrize('argument_name', ['-h', '-b', '-v', '-p=hH'])
-    def test_quiet_with_explicit_output_options(self, httpbin, argument_name):
+    @pytest.mark.parametrize('quiet_flags', QUIET_SCENARIOS)
+    @pytest.mark.parametrize('output_options', ['-h', '-b', '-v', '-p=hH'])
+    def test_quiet_with_explicit_output_options(self, httpbin, quiet_flags, output_options):
         env = MockEnvironment(stdin_isatty=True, stdout_isatty=True)
-        r = http('--quiet', argument_name, httpbin.url + '/get', env=env)
+        r = http(*quiet_flags, output_options, httpbin.url + '/get', env=env)
         assert env.stdout is env.devnull
         assert env.stderr is env.devnull
         assert r == ''
         assert r.stderr == ''
 
+    @pytest.mark.parametrize('quiet_flags', QUIET_SCENARIOS)
     @pytest.mark.parametrize('with_download', [True, False])
-    def test_quiet_with_output_redirection(self, tmp_path, httpbin, with_download):
+    def test_quiet_with_output_redirection(self, tmp_path, httpbin, quiet_flags, with_download):
         url = httpbin + '/robots.txt'
         output_path = Path('output.txt')
         env = MockEnvironment()
@@ -111,7 +133,7 @@ class TestQuietFlag:
         try:
             assert os.listdir('.') == []
             r = http(
-                '--quiet',
+                *quiet_flags,
                 '--output', str(output_path),
                 *extra_args,
                 url,
@@ -125,7 +147,7 @@ class TestQuietFlag:
                 assert env.stdout is env.devnull
             else:
                 assert env.stdout is not env.devnull  # --output swaps stdout.
-            assert output_path.read_text() == output
+            assert output_path.read_text(encoding=UTF8) == output
         finally:
             os.chdir(orig_cwd)
 
@@ -139,7 +161,7 @@ class TestVerboseFlag:
 
     def test_verbose_raw(self, httpbin):
         r = http('--verbose', '--raw', 'foo bar',
-                 'POST', httpbin.url + '/post',)
+                 'POST', httpbin.url + '/post')
         assert HTTP_OK in r
         assert 'foo bar' in r
 
@@ -167,8 +189,8 @@ class TestVerboseFlag:
 class TestColors:
 
     @pytest.mark.parametrize(
-        argnames=['mime', 'explicit_json', 'body', 'expected_lexer_name'],
-        argvalues=[
+        'mime, explicit_json, body, expected_lexer_name',
+        [
             ('application/json', False, None, 'JSON'),
             ('application/json+foo', False, None, 'JSON'),
             ('application/foo+json', False, None, 'JSON'),
@@ -207,7 +229,7 @@ class TestPrettyOptions:
 
     def test_force_pretty(self, httpbin):
         env = MockEnvironment(stdout_isatty=False, colors=256)
-        r = http('--pretty=all', 'GET', httpbin.url + '/get', env=env, )
+        r = http('--pretty=all', 'GET', httpbin.url + '/get', env=env)
         assert COLOR in r
 
     def test_force_ugly(self, httpbin):
@@ -301,8 +323,8 @@ class TestFormatOptions:
         assert f'ZZZ: foo{CRLF}XXX: foo' in r_unsorted
 
     @pytest.mark.parametrize(
-        argnames=['options', 'expected_json'],
-        argvalues=[
+        'options, expected_json',
+        [
             # @formatter:off
             (
                 'json.sort_keys:true,json.indent:4',
@@ -328,8 +350,8 @@ class TestFormatOptions:
         assert expected_json in r
 
     @pytest.mark.parametrize(
-        argnames=['defaults', 'options_string', 'expected'],
-        argvalues=[
+        'defaults, options_string, expected',
+        [
             # @formatter:off
             ({'foo': {'bar': 1}}, 'foo.bar:2', {'foo': {'bar': 2}}),
             ({'foo': {'bar': True}}, 'foo.bar:false', {'foo': {'bar': False}}),
@@ -342,8 +364,8 @@ class TestFormatOptions:
         assert expected == actual
 
     @pytest.mark.parametrize(
-        argnames=['options_string', 'expected_error'],
-        argvalues=[
+        'options_string, expected_error',
+        [
             ('foo:2', 'invalid option'),
             ('foo.baz:2', 'invalid key'),
             ('foo.bar:false', 'expected int got bool'),
@@ -359,8 +381,8 @@ class TestFormatOptions:
             parse_format_options(s=options_string, defaults=defaults)
 
     @pytest.mark.parametrize(
-        argnames=['args', 'expected_format_options'],
-        argvalues=[
+        'args, expected_format_options',
+        [
             (
                 [
                     '--format-options',
@@ -375,6 +397,10 @@ class TestFormatOptions:
                         'sort_keys': False,
                         'indent': 10,
                         'format': True
+                    },
+                    'xml': {
+                        'format': True,
+                        'indent': 2,
                     },
                 }
             ),
@@ -391,6 +417,10 @@ class TestFormatOptions:
                         'indent': 4,
                         'format': True
                     },
+                    'xml': {
+                        'format': True,
+                        'indent': 2,
+                    },
                 }
             ),
             (
@@ -408,6 +438,10 @@ class TestFormatOptions:
                         'indent': 4,
                         'format': True
                     },
+                    'xml': {
+                        'format': True,
+                        'indent': 2,
+                    },
                 }
             ),
             (
@@ -422,6 +456,8 @@ class TestFormatOptions:
             (
                 [
                     '--format-options=json.indent:2',
+                    '--format-options=xml.format:false',
+                    '--format-options=xml.indent:4',
                     '--unsorted',
                     '--no-unsorted',
                 ],
@@ -433,6 +469,10 @@ class TestFormatOptions:
                         'sort_keys': True,
                         'indent': 2,
                         'format': True
+                    },
+                    'xml': {
+                        'format': False,
+                        'indent': 4,
                     },
                 }
             ),
@@ -450,6 +490,10 @@ class TestFormatOptions:
                         'sort_keys': True,
                         'indent': 2,
                         'format': True
+                    },
+                    'xml': {
+                        'format': True,
+                        'indent': 2,
                     },
                 }
             ),
@@ -469,6 +513,10 @@ class TestFormatOptions:
                         'indent': 2,
                         'format': True
                     },
+                    'xml': {
+                        'format': True,
+                        'indent': 2,
+                    },
                 }
             ),
         ],
@@ -479,3 +527,35 @@ class TestFormatOptions:
             env=MockEnvironment(),
         )
         assert parsed_args.format_options == expected_format_options
+
+
+@responses.activate
+def test_response_mime_overwrite():
+    responses.add(
+        method=responses.GET,
+        url=DUMMY_URL,
+        body=XML_DATA_RAW,
+        content_type='text/plain',
+    )
+    r = http(
+        '--offline',
+        '--raw', XML_DATA_RAW,
+        '--response-mime=application/xml', DUMMY_URL
+    )
+    assert XML_DATA_RAW in r  # not affecting request bodies
+
+    r = http('--response-mime=application/xml', DUMMY_URL)
+    assert XML_DATA_FORMATTED in r
+
+
+@responses.activate
+def test_response_mime_overwrite_incorrect():
+    responses.add(
+        method=responses.GET,
+        url=DUMMY_URL,
+        body=XML_DATA_RAW,
+        content_type='text/xml',
+    )
+    # The provided Content-Type is simply ignored, and so no formatting is done.
+    r = http('--response-mime=incorrect/type', DUMMY_URL)
+    assert XML_DATA_RAW in r

@@ -1,7 +1,8 @@
-from typing import Iterable, Optional
+from typing import Iterable
 from urllib.parse import urlsplit
 
-from .utils import split_cookies
+from .utils import split_cookies, parse_content_type_header
+from .compat import cached_property
 
 
 class HTTPMessage:
@@ -12,33 +13,28 @@ class HTTPMessage:
 
     def iter_body(self, chunk_size: int) -> Iterable[bytes]:
         """Return an iterator over the body."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def iter_lines(self, chunk_size: int) -> Iterable[bytes]:
         """Return an iterator over the body yielding (`line`, `line_feed`)."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @property
     def headers(self) -> str:
         """Return a `str` with the message's headers."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
-    @property
-    def encoding(self) -> Optional[str]:
-        """Return a `str` with the message's encoding, if known."""
-        raise NotImplementedError()
-
-    @property
-    def body(self) -> bytes:
-        """Return a `bytes` with the message's body."""
-        raise NotImplementedError()
+    @cached_property
+    def encoding(self) -> str:
+        ct, params = parse_content_type_header(self.content_type)
+        return params.get('charset', '')
 
     @property
     def content_type(self) -> str:
         """Return the message content type."""
         ct = self._orig.headers.get('Content-Type', '')
         if not isinstance(ct, str):
-            ct = ct.decode('utf8')
+            ct = ct.decode()
         return ct
 
 
@@ -80,16 +76,6 @@ class HTTPResponse(HTTPMessage):
         )
         return '\r\n'.join(headers)
 
-    @property
-    def encoding(self):
-        return self._orig.encoding or 'utf8'
-
-    @property
-    def body(self):
-        # Only now the response body is fetched.
-        # Shouldn't be touched unless the body is actually needed.
-        return self._orig.content
-
 
 class HTTPRequest(HTTPMessage):
     """A :class:`requests.models.Request` wrapper."""
@@ -115,7 +101,7 @@ class HTTPRequest(HTTPMessage):
             headers['Host'] = url.netloc.split('@')[-1]
 
         headers = [
-            f'{name}: {value if isinstance(value, str) else value.decode("utf-8")}'
+            f'{name}: {value if isinstance(value, str) else value.decode()}'
             for name, value in headers.items()
         ]
 
@@ -124,13 +110,9 @@ class HTTPRequest(HTTPMessage):
         return headers
 
     @property
-    def encoding(self):
-        return 'utf8'
-
-    @property
     def body(self):
         body = self._orig.body
         if isinstance(body, str):
             # Happens with JSON/form request data parsed from the command line.
-            body = body.encode('utf8')
+            body = body.encode()
         return body or b''

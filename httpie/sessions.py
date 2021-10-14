@@ -52,7 +52,7 @@ def get_httpie_session(
 
 
 class Session(BaseConfigDict):
-    helpurl = 'https://httpie.org/doc#sessions'
+    helpurl = 'https://httpie.io/docs#sessions'
     about = 'HTTPie session file'
 
     def __init__(self, path: Union[str, Path]):
@@ -72,13 +72,13 @@ class Session(BaseConfigDict):
 
         """
         headers = self.headers
-        for name, value in request_headers.items():
+        for name, value in request_headers.copy().items():
 
             if value is None:
                 continue  # Ignore explicitly unset headers
 
             if type(value) is not str:
-                value = value.decode('utf8')
+                value = value.decode()
 
             if name.lower() == 'user-agent' and value.startswith('HTTPie/'):
                 continue
@@ -112,7 +112,7 @@ class Session(BaseConfigDict):
 
     @cookies.setter
     def cookies(self, jar: RequestsCookieJar):
-        # <https://docs.python.org/2/library/cookielib.html#cookie-objects>
+        # <https://docs.python.org/3/library/cookielib.html#cookie-objects>
         stored_attrs = ['value', 'path', 'secure', 'expires']
         self['cookies'] = {}
         for cookie in jar:

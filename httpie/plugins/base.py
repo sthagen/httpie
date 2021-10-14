@@ -1,5 +1,7 @@
-class BasePlugin:
+from typing import Tuple
 
+
+class BasePlugin:
     # The name of the plugin, eg. "My auth".
     name = None
 
@@ -53,7 +55,7 @@ class AuthPlugin(BasePlugin):
     # then this is `None`.
     raw_auth = None
 
-    def get_auth(self, username=None, password=None):
+    def get_auth(self, username: str = None, password: str = None):
         """
         If `auth_parse` is set to `True`, then `username`
         and `password` contain the parsed credentials.
@@ -93,7 +95,7 @@ class TransportPlugin(BasePlugin):
 
 class ConverterPlugin(BasePlugin):
     """
-    Possibly converts response data for prettified terminal display.
+    Possibly converts binary response data for prettified terminal display.
 
     See httpie-msgpack for an example converter plugin:
 
@@ -101,14 +103,21 @@ class ConverterPlugin(BasePlugin):
 
     """
 
-    def __init__(self, mime):
+    def __init__(self, mime: str):
         self.mime = mime
 
-    def convert(self, content_bytes):
+    def convert(self, body: bytes) -> Tuple[str, str]:
+        """
+        Convert a binary body to a textual representation for the terminal
+        and return a tuple containing the new Content-Type and content, e.g.:
+
+        ('application/json', '{}')
+
+        """
         raise NotImplementedError
 
     @classmethod
-    def supports(cls, mime):
+    def supports(cls, mime: str) -> bool:
         raise NotImplementedError
 
 

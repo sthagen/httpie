@@ -301,7 +301,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
         """
         self._ensure_one_data_source(self.has_stdin_data, self.args.data,
                                      self.args.files)
-        self.args.data = data.encode('utf-8')
+        self.args.data = data.encode()
 
     def _ensure_one_data_source(self, *other_sources):
         """There can only be one source of input request data.
@@ -311,7 +311,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             self.error('Request body (from stdin, --raw or a file) and request '
                        'data (key=value) cannot be mixed. Pass '
                        '--ignore-stdin to let key/value take priority. '
-                       'See https://httpie.org/doc#scripting for details.')
+                       'See https://httpie.io/docs#scripting for details.')
 
     def _guess_method(self):
         """Set `args.method` if not specified to either POST or GET
@@ -457,7 +457,8 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             self.error('--continue requires --output to be specified')
 
     def _process_format_options(self):
+        format_options = self.args.format_options or []
         parsed_options = PARSED_DEFAULT_FORMAT_OPTIONS
-        for options_group in self.args.format_options or []:
+        for options_group in format_options:
             parsed_options = parse_format_options(options_group, defaults=parsed_options)
         self.args.format_options = parsed_options

@@ -5,6 +5,7 @@ from typing import Union
 
 from . import __version__
 from .compat import is_windows
+from .encoding import UTF8
 
 
 ENV_XDG_CONFIG_HOME = 'XDG_CONFIG_HOME'
@@ -79,7 +80,7 @@ class BaseConfigDict(dict):
     def load(self):
         config_type = type(self).__name__.lower()
         try:
-            with self.path.open() as f:
+            with self.path.open(encoding=UTF8) as f:
                 try:
                     data = json.load(f)
                 except ValueError as e:
@@ -92,7 +93,7 @@ class BaseConfigDict(dict):
         except OSError as e:
             raise ConfigFileError(f'cannot read {config_type} file: {e}')
 
-    def save(self, fail_silently=False):
+    def save(self):
         self['__meta__'] = {
             'httpie': __version__
         }
@@ -110,18 +111,7 @@ class BaseConfigDict(dict):
             sort_keys=True,
             ensure_ascii=True,
         )
-        try:
-            self.path.write_text(json_string + '\n')
-        except OSError:
-            if not fail_silently:
-                raise
-
-    def delete(self):
-        try:
-            # TODO: use `missing_ok` kwarg when supporting Python 3.8+ only
-            self.path.unlink()
-        except FileNotFoundError:
-            pass
+        self.path.write_text(json_string + '\n', encoding=UTF8)
 
 
 class Config(BaseConfigDict):

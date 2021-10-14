@@ -33,6 +33,8 @@ HTTP_OK_COLOR = (
     '\x1b[39m\x1b[38;5;245m \x1b[39m\x1b[38;5;136mOK'
 )
 
+DUMMY_URL = 'http://this-should.never-resolve'  # Note: URL never fetched
+
 
 def mk_config_dir() -> Path:
     dirname = tempfile.mkdtemp(prefix='httpie_config_')
@@ -281,14 +283,14 @@ def http(
         output = stdout.read()
         devnull_output = devnull.read()
         try:
-            output = output.decode('utf8')
+            output = output.decode()
         except UnicodeDecodeError:
             r = BytesCLIResponse(output)
         else:
             r = StrCLIResponse(output)
 
         try:
-            devnull_output = devnull_output.decode('utf8')
+            devnull_output = devnull_output.decode()
         except Exception:
             pass
 

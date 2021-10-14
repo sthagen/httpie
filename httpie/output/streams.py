@@ -1,9 +1,11 @@
+from abc import ABCMeta, abstractmethod
 from itertools import chain
 from typing import Callable, Iterable, Union
 
-from ..context import Environment
-from ..models import HTTPMessage
 from .processing import Conversion, Formatting
+from ..context import Environment
+from ..encoding import smart_decode, smart_encode, UTF8
+from ..models import HTTPMessage
 
 
 BINARY_SUPPRESSED_NOTICE = (
@@ -24,7 +26,7 @@ class BinarySuppressedError(DataSuppressedError):
     message = BINARY_SUPPRESSED_NOTICE
 
 
-class BaseStream:
+class BaseStream(metaclass=ABCMeta):
     """Base HTTP message output stream class."""
 
     def __init__(
@@ -48,11 +50,11 @@ class BaseStream:
 
     def get_headers(self) -> bytes:
         """Return the headers' bytes."""
-        return self.msg.headers.encode('utf8')
+        return self.msg.headers.encode()
 
+    @abstractmethod
     def iter_body(self) -> Iterable[bytes]:
         """Return an iterator over the message body."""
-        raise NotImplementedError()
 
     def __iter__(self) -> Iterable[bytes]:
         """Return an iterator over `self.msg`."""
@@ -96,23 +98,31 @@ class EncodedStream(BaseStream):
     """
     CHUNK_SIZE = 1
 
-    def __init__(self, env=Environment(), **kwargs):
+    def __init__(
+        self,
+        env=Environment(),
+        mime_overwrite: str = None,
+        encoding_overwrite: str = None,
+        **kwargs
+    ):
         super().__init__(**kwargs)
+        self.mime = mime_overwrite or self.msg.content_type
+        self.encoding = encoding_overwrite or self.msg.encoding
         if env.stdout_isatty:
             # Use the encoding supported by the terminal.
             output_encoding = env.stdout_encoding
         else:
             # Preserve the message encoding.
             output_encoding = self.msg.encoding
-        # Default to utf8 when unsure.
-        self.output_encoding = output_encoding or 'utf8'
+        # Default to UTF-8 when unsure.
+        self.output_encoding = output_encoding or UTF8
 
     def iter_body(self) -> Iterable[bytes]:
         for line, lf in self.msg.iter_lines(self.CHUNK_SIZE):
             if b'\0' in line:
                 raise BinarySuppressedError()
-            yield line.decode(self.msg.encoding) \
-                      .encode(self.output_encoding, 'replace') + lf
+            line = smart_decode(line, self.encoding)
+            yield smart_encode(line, self.output_encoding) + lf
 
 
 class PrettyStream(EncodedStream):
@@ -134,7 +144,6 @@ class PrettyStream(EncodedStream):
         super().__init__(**kwargs)
         self.formatting = formatting
         self.conversion = conversion
-        self.mime = self.msg.content_type.split(';')[0]
 
     def get_headers(self) -> bytes:
         return self.formatting.format_headers(
@@ -165,9 +174,9 @@ class PrettyStream(EncodedStream):
         if not isinstance(chunk, str):
             # Text when a converter has been used,
             # otherwise it will always be bytes.
-            chunk = chunk.decode(self.msg.encoding, 'replace')
+            chunk = smart_decode(chunk, self.encoding)
         chunk = self.formatting.format_body(content=chunk, mime=self.mime)
-        return chunk.encode(self.output_encoding, 'replace')
+        return smart_encode(chunk, self.output_encoding)
 
 
 class BufferedPrettyStream(PrettyStream):

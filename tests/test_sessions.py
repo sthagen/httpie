@@ -7,6 +7,7 @@ from unittest import mock
 import pytest
 
 from .fixtures import FILE_PATH_ARG, UNICODE
+from httpie.encoding import UTF8
 from httpie.plugins import AuthPlugin
 from httpie.plugins.builtin import HTTPBasicAuth
 from httpie.plugins.registry import plugin_manager
@@ -52,7 +53,7 @@ class CookieTestBase:
             }
         }
         self.session_path = self.config_dir / 'test-session.json'
-        self.session_path.write_text(json.dumps(orig_session))
+        self.session_path.write_text(json.dumps(orig_session), encoding=UTF8)
 
     def teardown_method(self, method):
         shutil.rmtree(self.config_dir)
@@ -177,6 +178,24 @@ class TestSession(SessionTestBase):
         assert HTTP_OK in r2
         assert r2.json['headers']['Foo'] == 'Bar'
 
+    def test_session_with_cookie_followed_by_another_header(self, httpbin):
+        """
+        Make sure headers don’t get mutated — <https://github.com/httpie/httpie/issues/1126>
+        """
+        self.start_session(httpbin)
+        session_data = {
+            "headers": {
+                "cookie": "...",
+                "zzz": "..."
+            }
+        }
+        session_path = self.config_dir / 'session-data.json'
+        session_path.write_text(json.dumps(session_data))
+        r = http('--session', str(session_path), 'GET', httpbin.url + '/get',
+                 env=self.env())
+        assert HTTP_OK in r
+        assert 'Zzz' in r
+
     def test_session_unicode(self, httpbin):
         self.start_session(httpbin)
 
@@ -189,10 +208,10 @@ class TestSession(SessionTestBase):
                   httpbin.url + '/get', env=self.env())
         assert HTTP_OK in r2
 
-        # FIXME: Authorization *sometimes* is not present on Python3
+        # FIXME: Authorization *sometimes* is not present
         assert (r2.json['headers']['Authorization']
                 == HTTPBasicAuth.make_header('test', UNICODE))
-        # httpbin doesn't interpret utf8 headers
+        # httpbin doesn't interpret UTF-8 headers
         assert UNICODE in r2
 
     def test_session_default_header_value_overwritten(self, httpbin):
@@ -220,8 +239,8 @@ class TestSession(SessionTestBase):
             os.chdir(cwd)
 
     @pytest.mark.parametrize(
-        argnames=['auth_require_param', 'auth_parse_param'],
-        argvalues=[
+        'auth_require_param, auth_parse_param',
+        [
             (False, False),
             (False, True),
             (True, False)
@@ -309,7 +328,7 @@ class TestSession(SessionTestBase):
              Plugin.auth_type,
              '--auth', 'user:password',
              )
-        updated_session = json.loads(self.session_path.read_text())
+        updated_session = json.loads(self.session_path.read_text(encoding=UTF8))
         assert updated_session['auth']['type'] == 'test-saved'
         assert updated_session['auth']['raw_auth'] == "user:password"
         plugin_manager.unregister(Plugin)
@@ -318,8 +337,8 @@ class TestSession(SessionTestBase):
 class TestExpiredCookies(CookieTestBase):
 
     @pytest.mark.parametrize(
-        argnames=['initial_cookie', 'expired_cookie'],
-        argvalues=[
+        'initial_cookie, expired_cookie',
+        [
             ({'id': {'value': 123}}, 'id'),
             ({'id': {'value': 123}}, 'token')
         ]
@@ -338,7 +357,7 @@ class TestExpiredCookies(CookieTestBase):
         )
         assert 'Cookie: cookie1=foo; cookie2=foo' in r
 
-        updated_session = json.loads(self.session_path.read_text())
+        updated_session = json.loads(self.session_path.read_text(encoding=UTF8))
         assert 'cookie1' in updated_session['cookies']
         assert 'cookie2' not in updated_session['cookies']
 
@@ -350,8 +369,8 @@ class TestExpiredCookies(CookieTestBase):
         assert get_expired_cookies(cookies, now=None) == expected_expired
 
     @pytest.mark.parametrize(
-        argnames=['cookies', 'now', 'expected_expired'],
-        argvalues=[
+        'cookies, now, expected_expired',
+        [
             (
                 'hello=world; Path=/; Expires=Thu, 01-Jan-1970 00:00:00 GMT; HttpOnly',
                 None,
@@ -394,8 +413,8 @@ class TestExpiredCookies(CookieTestBase):
 class TestCookieStorage(CookieTestBase):
 
     @pytest.mark.parametrize(
-        argnames=['new_cookies', 'new_cookies_dict', 'expected'],
-        argvalues=[(
+        'new_cookies, new_cookies_dict, expected',
+        [(
             'new=bar',
             {'new': 'bar'},
             'cookie1=foo; cookie2=foo; new=bar'
@@ -432,14 +451,14 @@ class TestCookieStorage(CookieTestBase):
         # Note: cookies in response are in alphabetical order
         assert f'Cookie: {expected}' in r
 
-        updated_session = json.loads(self.session_path.read_text())
+        updated_session = json.loads(self.session_path.read_text(encoding=UTF8))
         for name, value in new_cookies_dict.items():
             assert name, value in updated_session['cookies']
             assert 'Cookie' not in updated_session['headers']
 
     @pytest.mark.parametrize(
-        argnames=['cli_cookie', 'set_cookie', 'expected'],
-        argvalues=[(
+        'cli_cookie, set_cookie, expected',
+        [(
             '',
             '/cookies/set/cookie1/bar',
             'bar'
@@ -473,6 +492,6 @@ class TestCookieStorage(CookieTestBase):
             httpbin.url + set_cookie,
             'Cookie:' + cli_cookie,
         )
-        updated_session = json.loads(self.session_path.read_text())
+        updated_session = json.loads(self.session_path.read_text(encoding=UTF8))
 
         assert updated_session['cookies']['cookie1']['value'] == expected

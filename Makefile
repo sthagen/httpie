@@ -1,5 +1,5 @@
 ###############################################################################
-# See ./CONTRIBUTING.rst
+# See ./CONTRIBUTING.md
 ###############################################################################
 
 .PHONY: build
@@ -25,7 +25,13 @@ export PATH := $(VENV_BIN):$(PATH)
 all: uninstall-httpie install test
 
 
-install: venv
+install: venv install-reqs
+
+
+install-reqs:
+	@echo $(H1)Updating package tools$(H1END)
+	$(VENV_PIP) install --upgrade pip wheel
+
 	@echo $(H1)Installing dev requirements$(H1END)
 	$(VENV_PIP) install --upgrade --editable '.[dev]'
 
@@ -33,6 +39,7 @@ install: venv
 	$(VENV_PIP) install --upgrade --editable .
 
 	@echo
+
 
 clean:
 	@echo $(H1)Cleaning up$(H1END)
@@ -77,11 +84,11 @@ venv:
 
 test:
 	@echo $(H1)Running tests$(HEADER_EXTRA)$(H1END)
-	$(VENV_BIN)/python -m pytest $(COV) ./httpie $(COV) ./tests --doctest-modules --verbose ./httpie ./tests
+	$(VENV_BIN)/python -m pytest $(COV)
 	@echo
 
 
-test-cover: COV=--cov
+test-cover: COV=--cov=httpie --cov=tests
 test-cover: HEADER_EXTRA=' (with coverage)'
 test-cover: test
 
@@ -123,7 +130,7 @@ pycodestyle: codestyle
 codestyle:
 	@echo $(H1)Running flake8$(H1END)
 	@[ -f $(VENV_BIN)/flake8 ] || $(VENV_PIP) install --upgrade --editable '.[dev]'
-	$(VENV_BIN)/flake8 httpie/ tests/ extras/ *.py
+	$(VENV_BIN)/flake8 httpie/ tests/ docs/packaging/brew/ *.py
 	@echo
 
 
@@ -133,6 +140,16 @@ codecov-upload:
 	# $(VENV_BIN)/codecov --required
 	$(VENV_BIN)/codecov
 	@echo
+
+
+doc-check:
+	@echo $(H1)Running documentations checks$(H1END)
+	mdl --git-recurse --style docs/markdownlint.rb .
+
+
+doc-update-install:
+	@echo $(H1)Updating installation instructions in the docs$(H1END)
+	$(VENV_PYTHON) docs/installation/generate.py
 
 
 ###############################################################################
@@ -175,28 +192,21 @@ uninstall-httpie:
 
 
 ###############################################################################
-# Docs
-###############################################################################
-
-pdf:
-	@echo "Converting README.rst to PDF…"
-	rst2pdf \
-		--strip-elements-with-class=no-pdf \
-		README.rst \
-		-o README.pdf
-	@echo "Done"
-	@echo
-
-
-###############################################################################
 # Homebrew
 ###############################################################################
 
 brew-deps:
-	extras/brew-deps.py
+	docs/packaging/brew/brew-deps.py
 
 brew-test:
+	@echo $(H1)Uninstalling httpie$(H1END)
 	- brew uninstall httpie
-	brew install --build-from-source ./extras/httpie.rb
+
+	@echo $(H1)Building from source…$(H1END)
+	- brew install --build-from-source ./docs/packaging/brew/httpie.rb
+
+	@echo $(H1)Verifying…$(H1END)
 	brew test httpie
+
+	@echo $(H1)Auditing…$(H1END)
 	brew audit --strict httpie
