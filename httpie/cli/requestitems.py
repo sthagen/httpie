@@ -1,28 +1,33 @@
 import os
+import functools
 from typing import Callable, Dict, IO, List, Optional, Tuple, Union
 
 from .argtypes import KeyValueArg
 from .constants import (
     SEPARATORS_GROUP_MULTIPART, SEPARATOR_DATA_EMBED_FILE_CONTENTS,
-    SEPARATOR_DATA_EMBED_RAW_JSON_FILE,
+    SEPARATOR_DATA_EMBED_RAW_JSON_FILE, SEPARATOR_GROUP_NESTED_JSON_ITEMS,
     SEPARATOR_DATA_RAW_JSON, SEPARATOR_DATA_STRING, SEPARATOR_FILE_UPLOAD,
     SEPARATOR_FILE_UPLOAD_TYPE, SEPARATOR_HEADER, SEPARATOR_HEADER_EMPTY,
-    SEPARATOR_QUERY_PARAM,
+    SEPARATOR_HEADER_EMBED, SEPARATOR_QUERY_PARAM,
+    SEPARATOR_QUERY_EMBED_FILE, RequestType
 )
 from .dicts import (
-    MultipartRequestDataDict, RequestDataDict, RequestFilesDict,
-    RequestHeadersDict, RequestJSONDataDict,
+    BaseMultiDict, MultipartRequestDataDict, RequestDataDict,
+    RequestFilesDict, HTTPHeadersDict, RequestJSONDataDict,
     RequestQueryParamsDict,
 )
 from .exceptions import ParseError
-from ..utils import get_content_type, load_json_preserve_order_and_dupe_keys
+from .nested_json import interpret_nested_json
+from ..utils import get_content_type, load_json_preserve_order_and_dupe_keys, split
 
 
 class RequestItems:
 
-    def __init__(self, as_form=False):
-        self.headers = RequestHeadersDict()
-        self.data = RequestDataDict() if as_form else RequestJSONDataDict()
+    def __init__(self, request_type: Optional[RequestType] = None):
+        self.headers = HTTPHeadersDict()
+        self.request_type = request_type
+        self.is_json = request_type is None or request_type is RequestType.JSON
+        self.data = RequestJSONDataDict() if self.is_json else RequestDataDict()
         self.files = RequestFilesDict()
         self.params = RequestQueryParamsDict()
         # To preserve the order of fields in file upload multipart requests.
@@ -32,9 +37,9 @@ class RequestItems:
     def from_args(
         cls,
         request_item_args: List[KeyValueArg],
-        as_form=False,
+        request_type: Optional[RequestType] = None,
     ) -> 'RequestItems':
-        instance = cls(as_form=as_form)
+        instance = cls(request_type=request_type)
         rules: Dict[str, Tuple[Callable, dict]] = {
             SEPARATOR_HEADER: (
                 process_header_arg,
@@ -44,8 +49,16 @@ class RequestItems:
                 process_empty_header_arg,
                 instance.headers,
             ),
+            SEPARATOR_HEADER_EMBED: (
+                process_embed_header_arg,
+                instance.headers,
+            ),
             SEPARATOR_QUERY_PARAM: (
                 process_query_param_arg,
+                instance.params,
+            ),
+            SEPARATOR_QUERY_EMBED_FILE: (
+                process_embed_query_param_arg,
                 instance.params,
             ),
             SEPARATOR_FILE_UPLOAD: (
@@ -60,23 +73,46 @@ class RequestItems:
                 process_data_embed_file_contents_arg,
                 instance.data,
             ),
+            SEPARATOR_GROUP_NESTED_JSON_ITEMS: (
+                process_data_nested_json_embed_args,
+                instance.data,
+            ),
             SEPARATOR_DATA_RAW_JSON: (
-                process_data_raw_json_embed_arg,
+                json_only(instance, process_data_raw_json_embed_arg),
                 instance.data,
             ),
             SEPARATOR_DATA_EMBED_RAW_JSON_FILE: (
-                process_data_embed_raw_json_file_arg,
+                json_only(instance, process_data_embed_raw_json_file_arg),
                 instance.data,
             ),
         }
 
+        if instance.is_json:
+            json_item_args, request_item_args = split(
+                request_item_args,
+                lambda arg: arg.sep in SEPARATOR_GROUP_NESTED_JSON_ITEMS
+            )
+            if json_item_args:
+                pairs = [
+                    (arg.key, rules[arg.sep][0](arg))
+                    for arg in json_item_args
+                ]
+                processor_func, target_dict = rules[SEPARATOR_GROUP_NESTED_JSON_ITEMS]
+                value = processor_func(pairs)
+                target_dict.update(value)
+
+        # Then handle all other items.
         for arg in request_item_args:
             processor_func, target_dict = rules[arg.sep]
             value = processor_func(arg)
-            target_dict[arg.key] = value
 
             if arg.sep in SEPARATORS_GROUP_MULTIPART:
                 instance.multipart_data[arg.key] = value
+
+            if isinstance(target_dict, BaseMultiDict):
+                target_dict.add(arg.key, value)
+            else:
+                target_dict[arg.key] = value
 
         return instance
 
@@ -86,6 +122,10 @@ JSONType = Union[str, bool, int, list, dict]
 
 def process_header_arg(arg: KeyValueArg) -> Optional[str]:
     return arg.value or None
+
+
+def process_embed_header_arg(arg: KeyValueArg) -> str:
+    return load_text_file(arg).rstrip('\n')
 
 
 def process_empty_header_arg(arg: KeyValueArg) -> str:
@@ -98,6 +138,10 @@ def process_empty_header_arg(arg: KeyValueArg) -> str:
 
 def process_query_param_arg(arg: KeyValueArg) -> str:
     return arg.value
+
+
+def process_embed_query_param_arg(arg: KeyValueArg) -> str:
+    return load_text_file(arg).rstrip('\n')
 
 
 def process_file_upload_arg(arg: KeyValueArg) -> Tuple[str, IO, str]:
@@ -123,6 +167,29 @@ def process_data_embed_file_contents_arg(arg: KeyValueArg) -> str:
     return load_text_file(arg)
 
 
+def json_only(items: RequestItems, func: Callable[[KeyValueArg], JSONType]) -> str:
+    if items.is_json:
+        return func
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> str:
+        try:
+            ret = func(*args, **kwargs)
+        except ParseError:
+            ret = None
+
+        # If it is a basic type, then allow it
+        if isinstance(ret, (str, int, float)):
+            return str(ret)
+        else:
+            raise ParseError(
+                'Can\'t use complex JSON value types with '
+                '--form/--multipart.'
+            )
+
+    return wrapper
+
+
 def process_data_embed_raw_json_file_arg(arg: KeyValueArg) -> JSONType:
     contents = load_text_file(arg)
     value = load_json(arg, contents)
@@ -132,6 +199,10 @@ def process_data_embed_raw_json_file_arg(arg: KeyValueArg) -> JSONType:
 def process_data_raw_json_embed_arg(arg: KeyValueArg) -> JSONType:
     value = load_json(arg, arg.value)
     return value
+
+
+def process_data_nested_json_embed_args(pairs) -> Dict[str, JSONType]:
+    return interpret_nested_json(pairs)
 
 
 def load_text_file(item: KeyValueArg) -> str:

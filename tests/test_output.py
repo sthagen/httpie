@@ -17,7 +17,7 @@ from httpie.cli.argtypes import (
 )
 from httpie.cli.definition import parser
 from httpie.encoding import UTF8
-from httpie.output.formatters.colors import get_lexer
+from httpie.output.formatters.colors import PIE_STYLES, get_lexer
 from httpie.status import ExitStatus
 from .fixtures import XML_DATA_RAW, XML_DATA_FORMATTED
 from .utils import COLOR, CRLF, HTTP_OK, MockEnvironment, http, DUMMY_URL
@@ -213,6 +213,25 @@ class TestColors:
 
     def test_get_lexer_not_found(self):
         assert get_lexer('xxx/yyy') is None
+
+
+@pytest.mark.parametrize("endpoint", [
+    "/encoding/utf8",
+    "/html",
+    "/json",
+    "/xml",
+])
+def test_ensure_contents_colored(httpbin, endpoint):
+    env = MockEnvironment(colors=256)
+    r = http('--body', 'GET', httpbin + endpoint, env=env)
+    assert COLOR in r
+
+
+@pytest.mark.parametrize('style', PIE_STYLES.keys())
+def test_ensure_meta_is_colored(httpbin, style):
+    env = MockEnvironment(colors=256)
+    r = http('--meta', '--style', style, 'GET', httpbin + '/get', env=env)
+    assert COLOR in r
 
 
 class TestPrettyOptions:

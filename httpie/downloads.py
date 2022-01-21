@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .models import HTTPResponse
+from .models import HTTPResponse, OutputOptions
 from .output.streams import RawStream
 from .utils import humanize_bytes
 
@@ -266,12 +266,11 @@ class Downloader:
             total_size=total_size
         )
 
+        output_options = OutputOptions.from_message(final_response, headers=False, body=True)
         stream = RawStream(
             msg=HTTPResponse(final_response),
-            with_headers=False,
-            with_body=True,
+            output_options=output_options,
             on_body_chunk_downloaded=self.chunk_downloaded,
-            chunk_size=1024 * 8
         )
 
         self._progress_reporter.output.write(
@@ -324,7 +323,7 @@ class Downloader:
                 content_type=final_response.headers.get('Content-Type'),
             )
         unique_filename = get_unique_filename(filename)
-        return open(unique_filename, mode='a+b')
+        return open(unique_filename, buffering=0, mode='a+b')
 
 
 class DownloadStatus:

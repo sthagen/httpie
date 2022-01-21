@@ -33,7 +33,9 @@ install_requires = [
     'requests[socks]>=2.22.0',
     'Pygments>=2.5.2',
     'requests-toolbelt>=0.9.1',
+    'multidict>=4.7.0',
     'setuptools',
+    'importlib-metadata>=1.4.0; python_version < "3.8"',
 ]
 install_requires_win_only = [
     'colorama>=0.2.4',
@@ -79,9 +81,10 @@ setup(
         'console_scripts': [
             'http = httpie.__main__:main',
             'https = httpie.__main__:main',
+            'httpie = httpie.manager.__main__:main',
         ],
     },
-    python_requires='>=3.6',
+    python_requires='>=3.7',
     extras_require=extras_require,
     install_requires=install_requires,
     classifiers=[

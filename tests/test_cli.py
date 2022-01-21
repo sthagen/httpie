@@ -39,8 +39,8 @@ class TestItemParsing:
             # files
             self.key_value_arg(fr'bar\@baz@{FILE_PATH_ARG}'),
         ])
-        # `requests.structures.CaseInsensitiveDict` => `dict`
-        headers = dict(items.headers._store.values())
+        # `HTTPHeadersDict` => `dict`
+        headers = dict(items.headers)
 
         assert headers == {
             'foo:bar': 'baz',
@@ -79,21 +79,26 @@ class TestItemParsing:
             self.key_value_arg('Empty-Header;'),
             self.key_value_arg('list:=["a", 1, {}, false]'),
             self.key_value_arg('obj:={"a": "b"}'),
+            self.key_value_arg(r'nested\[2\][a][]=1'),
+            self.key_value_arg('nested[2][a][]:=1'),
             self.key_value_arg('ed='),
             self.key_value_arg('bool:=true'),
             self.key_value_arg('file@' + FILE_PATH_ARG),
             self.key_value_arg('query==value'),
+            self.key_value_arg('Embedded-Header:@' + FILE_PATH_ARG),
             self.key_value_arg('string-embed=@' + FILE_PATH_ARG),
+            self.key_value_arg('param-embed==@' + FILE_PATH_ARG),
             self.key_value_arg('raw-json-embed:=@' + JSON_FILE_PATH_ARG),
         ])
 
         # Parsed headers
-        # `requests.structures.CaseInsensitiveDict` => `dict`
-        headers = dict(items.headers._store.values())
+        # `HTTPHeadersDict` => `dict`
+        headers = dict(items.headers)
         assert headers == {
             'Header': 'value',
             'Unset-Header': None,
-            'Empty-Header': ''
+            'Empty-Header': '',
+            'Embedded-Header': FILE_CONTENT.rstrip('\n')
         }
 
         # Parsed data
@@ -104,14 +109,17 @@ class TestItemParsing:
             'ed': '',
             'string': 'value',
             'bool': True,
-            'list': ['a', 1, {}, False],
+            'list': ['a', 1, load_json_preserve_order_and_dupe_keys('{}'), False],
+            'nested[2]': {'a': ['1']},
+            'nested': [None, None, {'a': [1]}],
             'obj': load_json_preserve_order_and_dupe_keys('{"a": "b"}'),
-            'string-embed': FILE_CONTENT,
+            'string-embed': FILE_CONTENT
         }
 
         # Parsed query string parameters
         assert items.params == {
-            'query': 'value'
+            'query': 'value',
+            'param-embed': FILE_CONTENT.rstrip('\n')
         }
 
         # Parsed file fields
@@ -132,7 +140,7 @@ class TestItemParsing:
                 self.key_value_arg('text_field=a'),
                 self.key_value_arg('text_field=b')
             ],
-            as_form=True,
+            request_type=constants.RequestType.FORM,
         )
         assert items.data['text_field'] == ['a', 'b']
         assert list(items.data.items()) == [
@@ -167,6 +175,21 @@ class TestQuerystring:
         assert HTTP_OK in r
         assert f'GET {path} HTTP/1.1' in r
         assert f'"url": "{url}"' in r
+
+
+@pytest.mark.parametrize(['program_name', 'url_arg', 'parsed_url'], [
+    ('http', '://pie.dev/get', 'http://pie.dev/get'),
+    ('https', '://pie.dev/get', 'https://pie.dev/get'),
+])
+def test_url_leading_colon_slash_slash(program_name, url_arg, parsed_url):
+    env = MockEnvironment(program_name=program_name)
+    args = parser.parse_args(args=[url_arg], env=env)
+    assert args.url == parsed_url
+
+
+def test_url_colon_slash_slash_only():
+    r = http('://', tolerate_error_exit_status=True)
+    assert r.stderr.strip() == "http: error: InvalidURL: Invalid URL 'http://': No host supplied"
 
 
 class TestLocalhostShorthand:

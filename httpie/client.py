@@ -3,19 +3,21 @@ import http.client
 import json
 import sys
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Callable, Iterable, Union
+from typing import Any, Dict, Callable, Iterable
 from urllib.parse import urlparse, urlunparse
 
 import requests
 # noinspection PyPackageRequirements
 import urllib3
 from . import __version__
-from .cli.dicts import RequestHeadersDict
+from .adapters import HTTPieHTTPAdapter
+from .context import Environment
+from .cli.dicts import HTTPHeadersDict
 from .encoding import UTF8
+from .models import RequestsMessage
 from .plugins.registry import plugin_manager
 from .sessions import get_httpie_session
-from .ssl import AVAILABLE_SSL_VERSION_ARG_MAPPING, HTTPieHTTPSAdapter
+from .ssl_ import AVAILABLE_SSL_VERSION_ARG_MAPPING, HTTPieHTTPSAdapter
 from .uploads import (
     compress_request, prepare_request_body,
     get_multipart_data_and_content_type,
@@ -32,15 +34,15 @@ DEFAULT_UA = f'HTTPie/{__version__}'
 
 
 def collect_messages(
+    env: Environment,
     args: argparse.Namespace,
-    config_dir: Path,
     request_body_read_callback: Callable[[bytes], None] = None,
-) -> Iterable[Union[requests.PreparedRequest, requests.Response]]:
+) -> Iterable[RequestsMessage]:
     httpie_session = None
     httpie_session_headers = None
     if args.session or args.session_read_only:
         httpie_session = get_httpie_session(
-            config_dir=config_dir,
+            config_dir=env.config.directory,
             session_name=args.session or args.session_read_only,
             host=args.headers.get('Host'),
             url=args.url,
@@ -48,6 +50,7 @@ def collect_messages(
         httpie_session_headers = httpie_session.headers
 
     request_kwargs = make_request_kwargs(
+        env,
         args=args,
         base_headers=httpie_session_headers,
         request_body_read_callback=request_body_read_callback
@@ -79,6 +82,7 @@ def collect_messages(
 
     request = requests.Request(**request_kwargs)
     prepared_request = requests_session.prepare_request(request)
+    apply_missing_repeated_headers(prepared_request, request.headers)
     if args.path_as_is:
         prepared_request.url = ensure_path_as_is(
             orig_url=args.url,
@@ -152,6 +156,7 @@ def build_requests_session(
     requests_session = requests.Session()
 
     # Install our adapter.
+    http_adapter = HTTPieHTTPAdapter()
     https_adapter = HTTPieHTTPSAdapter(
         ciphers=ciphers,
         verify=verify,
@@ -160,6 +165,7 @@ def build_requests_session(
             if ssl_version else None
         ),
     )
+    requests_session.mount('http://', http_adapter)
     requests_session.mount('https://', https_adapter)
 
     # Install adapters from plugins.
@@ -178,8 +184,8 @@ def dump_request(kwargs: dict):
         f'\n>>> requests.request(**{repr_dict(kwargs)})\n\n')
 
 
-def finalize_headers(headers: RequestHeadersDict) -> RequestHeadersDict:
-    final_headers = RequestHeadersDict()
+def finalize_headers(headers: HTTPHeadersDict) -> HTTPHeadersDict:
+    final_headers = HTTPHeadersDict()
     for name, value in headers.items():
         if value is not None:
             # “leading or trailing LWS MAY be removed without
@@ -190,12 +196,42 @@ def finalize_headers(headers: RequestHeadersDict) -> RequestHeadersDict:
             if isinstance(value, str):
                 # See <https://github.com/httpie/httpie/issues/212>
                 value = value.encode()
-        final_headers[name] = value
+        final_headers.add(name, value)
     return final_headers
 
 
-def make_default_headers(args: argparse.Namespace) -> RequestHeadersDict:
-    default_headers = RequestHeadersDict({
+def apply_missing_repeated_headers(
+    prepared_request: requests.PreparedRequest,
+    original_headers: HTTPHeadersDict
+) -> None:
+    """Update the given `prepared_request`'s headers with the original
+    ones. This allows the requests to be prepared as usual, and then later
+    merged with headers that are specified multiple times."""
+
+    new_headers = HTTPHeadersDict(prepared_request.headers)
+    for prepared_name, prepared_value in prepared_request.headers.items():
+        if prepared_name not in original_headers:
+            continue
+
+        original_keys, original_values = zip(*filter(
+            lambda item: item[0].casefold() == prepared_name.casefold(),
+            original_headers.items()
+        ))
+
+        if prepared_value not in original_values:
+            # If the current value is not among the initial values
+            # set for this field, then it means that this field got
+            # overridden on the way, and we should preserve it.
+            continue
+
+        new_headers.popone(prepared_name)
+        new_headers.update(zip(original_keys, original_values))
+
+    prepared_request.headers = new_headers
+
+
+def make_default_headers(args: argparse.Namespace) -> HTTPHeadersDict:
+    default_headers = HTTPHeadersDict({
         'User-Agent': DEFAULT_UA
     })
 
@@ -238,9 +274,28 @@ def make_send_kwargs_mergeable_from_env(args: argparse.Namespace) -> dict:
     }
 
 
+def json_dict_to_request_body(data: Dict[str, Any]) -> str:
+    # Propagate the top-level list if there is only one
+    # item in the object, with an en empty key.
+    if len(data) == 1:
+        [(key, value)] = data.items()
+        if key == '' and isinstance(value, list):
+            data = value
+
+    if data:
+        data = json.dumps(data)
+    else:
+        # We need to set data to an empty string to prevent requests
+        # from assigning an empty list to `response.request.data`.
+        data = ''
+
+    return data
+
+
 def make_request_kwargs(
+    env: Environment,
     args: argparse.Namespace,
-    base_headers: RequestHeadersDict = None,
+    base_headers: HTTPHeadersDict = None,
     request_body_read_callback=lambda chunk: chunk
 ) -> dict:
     """
@@ -252,12 +307,7 @@ def make_request_kwargs(
     data = args.data
     auto_json = data and not args.form
     if (args.json or auto_json) and isinstance(data, dict):
-        if data:
-            data = json.dumps(data)
-        else:
-            # We need to set data to an empty string to prevent requests
-            # from assigning an empty list to `response.request.data`.
-            data = ''
+        data = json_dict_to_request_body(data)
 
     # Finalize headers.
     headers = make_default_headers(args)
@@ -282,7 +332,8 @@ def make_request_kwargs(
         'url': args.url,
         'headers': headers,
         'data': prepare_request_body(
-            body=data,
+            env,
+            data,
             body_read_callback=request_body_read_callback,
             chunked=args.chunked,
             offline=args.offline,

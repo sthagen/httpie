@@ -144,11 +144,25 @@ $ python -m pytest tests/test_uploads.py::TestMultipartFormDataFileUpload::test_
 
 See [Makefile](https://github.com/httpie/httpie/blob/master/Makefile) for additional development utilities.
 
+#### Running benchmarks
+
+If you are trying to work on speeding up HTTPie and want to verify your results, you
+can run the benchmark suite. The suite will compare the last commit of your branch
+with the master branch of your repository (or a fresh checkout of HTTPie master, through
+`--fresh`) and report the results back.
+
+```bash
+$ python extras/benchmarks/run.py
+```
+
+The benchmarks can also be run on the CI. Since it is a long process, it requires manual
+oversight. Ping one of the maintainers to get a `benchmark` label on your branch.
+
 #### Windows
 
 If you are on a Windows machine and not able to run `make`,
 follow the next steps for a basic setup. As a prerequisite, you need to have
-Python 3.6+ installed.
+Python 3.7+ installed.
 
 Create a virtual environment and activate it:
 
@@ -160,7 +174,7 @@ C:\> venv\Scripts\activate
 Install HTTPie in editable mode with all the dependencies:
 
 ```powershell
-C:\> python -m pip install --upgrade -e . -r requirements-dev.txt
+C:\> python -m pip install --upgrade -e .[dev]
 ```
 
 You should now see `(httpie)` next to your shell prompt, and
@@ -168,19 +182,19 @@ the `http` command should point to your development copy:
 
 ```powershell
 # In PowerShell:
-(httpie) PS C:\Users\ovezovs\httpie> Get-Command http
+(httpie) PS C:\Users\<user>\httpie> Get-Command http
 CommandType     Name                                               Version    Source
 -----------     ----                                               -------    ------
-Application     http.exe                                           0.0.0.0    C:\Users\ovezovs\httpie\venv\Scripts\http.exe
+Application     http.exe                                           0.0.0.0    C:\Users\<user>\httpie\venv\Scripts\http.exe
 ```
 
 ```bash
 # In CMD:
-(httpie) C:\Users\ovezovs\httpie> where http
-C:\Users\ovezovs\httpie\venv\Scripts\http.exe
-C:\Users\ovezovs\AppData\Local\Programs\Python\Python38-32\Scripts\http.exe
+(httpie) C:\Users\<user>\httpie> where http
+C:\Users\<user>\httpie\venv\Scripts\http.exe
+C:\Users\<user>\AppData\Local\Programs\Python\Python38-32\Scripts\http.exe
 
-(httpie) C:\Users\ovezovs\httpie> http --version
+(httpie) C:\Users\<user>\httpie> http --version
 2.3.0-dev
 ```
 

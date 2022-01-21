@@ -5,6 +5,15 @@ import pytest
 from pytest_httpbin import certs
 
 from .utils import HTTPBIN_WITH_CHUNKED_SUPPORT_DOMAIN, HTTPBIN_WITH_CHUNKED_SUPPORT
+from .utils.plugins_cli import ( # noqa
+    broken_plugin,
+    dummy_plugin,
+    dummy_plugins,
+    httpie_plugins,
+    httpie_plugins_success,
+    interface,
+)
+from .utils.http_server import http_server # noqa
 
 
 @pytest.fixture(scope='function', autouse=True)

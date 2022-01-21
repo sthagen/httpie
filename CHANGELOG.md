@@ -3,7 +3,32 @@
 This document records all notable changes to [HTTPie](https://httpie.io).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.0.0](https://github.com/httpie/httpie/compare/2.6.0...3.0.0) (2022-01-21)
+
+- Dropped support for Python 3.6. ([#1177](https://github.com/httpie/httpie/issues/1177))
+- Improved startup time by 40%. ([#1211](https://github.com/httpie/httpie/pull/1211))
+- Added support for nested JSON syntax. ([#1169](https://github.com/httpie/httpie/issues/1169))
+- Added `httpie plugins` interface for plugin management. ([#566](https://github.com/httpie/httpie/issues/566))
+- Added support for Bearer authentication via `--auth-type=bearer` ([#1215](https://github.com/httpie/httpie/issues/1215)).
+- Added support for quick conversions of pasted URLs into HTTPie calls by adding a space after the protocol name (`$ https ://pie.dev` → `https://pie.dev`). ([#1195](https://github.com/httpie/httpie/issues/1195))
+- Added support for _sending_ multiple HTTP header lines with the same name. ([#130](https://github.com/httpie/httpie/issues/130))
+- Added support for _receiving_ multiple HTTP headers lines with the same name. ([#1207](https://github.com/httpie/httpie/issues/1207))
+- Added support for basic JSON types on `--form`/`--multipart` when using JSON only operators (`:=`/`:=@`). ([#1212](https://github.com/httpie/httpie/issues/1212))
+- Added support for automatically enabling `--stream` when `Content-Type` is `text/event-stream`. ([#376](https://github.com/httpie/httpie/issues/376))
+- Added support for displaying the total elapsed time through `--meta`/`-vv` or `--print=m`. ([#243](https://github.com/httpie/httpie/issues/243))
+- Added new `pie-dark`/`pie-light` (and `pie`) styles that match with [HTTPie for Web and Desktop](https://httpie.io/product). ([#1237](https://github.com/httpie/httpie/issues/1237))
+- Added support for better error handling on DNS failures. ([#1248](https://github.com/httpie/httpie/issues/1248))
+- Added support for storing prompted passwords in the local sessions. ([#1098](https://github.com/httpie/httpie/issues/1098))
+- Added warnings about the `--ignore-stdin`, when there is no incoming data from stdin. ([#1255](https://github.com/httpie/httpie/issues/1255))
+- Fixed crashing due to broken plugins. ([#1204](https://github.com/httpie/httpie/issues/1204))
+- Fixed auto addition of XML declaration to every formatted XML response. ([#1156](https://github.com/httpie/httpie/issues/1156))
+- Fixed highlighting when `Content-Type` specifies `charset`. ([#1242](https://github.com/httpie/httpie/issues/1242))
+- Fixed an unexpected crash when `--raw` is used with `--chunked`. ([#1253](https://github.com/httpie/httpie/issues/1253))
+- Changed the default Windows theme from `fruity` to `auto`. ([#1266](https://github.com/httpie/httpie/issues/1266))
+
 ## [2.6.0](https://github.com/httpie/httpie/compare/2.5.0...2.6.0) (2021-10-14)
+
+[What’s new in HTTPie 2.6.0 →](https://httpie.io/blog/httpie-2.6.0)
 
 - Added support for formatting & coloring of JSON bodies preceded by non-JSON data (e.g., an XXSI prefix). ([#1130](https://github.com/httpie/httpie/issues/1130))
 - Added charset auto-detection when `Content-Type` doesn’t include it. ([#1110](https://github.com/httpie/httpie/issues/1110), [#1168](https://github.com/httpie/httpie/issues/1168))
@@ -15,7 +40,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.5.0](https://github.com/httpie/httpie/compare/2.4.0...2.5.0) (2021-09-06)
 
-Blog post: [What’s new in HTTPie 2.5.0](https://httpie.io/blog/httpie-2.5.0)
+[What’s new in HTTPie 2.5.0 →](https://httpie.io/blog/httpie-2.5.0)
 
 - Added `--raw` to allow specifying the raw request body without extra processing as
   an alternative to `stdin`. ([#534](https://github.com/httpie/httpie/issues/534))

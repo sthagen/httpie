@@ -57,12 +57,12 @@ class KeyValueArgType:
 
     def __init__(self, *separators: str):
         self.separators = separators
-        self.special_characters = set('\\')
+        self.special_characters = set()
         for separator in separators:
             self.special_characters.update(separator)
 
     def __call__(self, s: str) -> KeyValueArg:
-        """Parse raw string arg  and return `self.key_value_class` instance.
+        """Parse raw string arg and return `self.key_value_class` instance.
 
         The best of `self.separators` is determined (first found, longest).
         Back slash escaped characters aren't considered as separators
@@ -113,7 +113,7 @@ class KeyValueArgType:
         There are only two token types - strings and escaped characters:
 
         >>> KeyValueArgType('=').tokenize(r'foo\=bar\\baz')
-        ['foo', Escaped('='), 'bar', Escaped('\\'), 'baz']
+        ['foo', Escaped('='), 'bar\\\\baz']
 
         """
         tokens = ['']

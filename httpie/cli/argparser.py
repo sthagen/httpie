@@ -15,7 +15,7 @@ from .argtypes import (
     parse_format_options,
 )
 from .constants import (
-    HTTP_GET, HTTP_POST, OUTPUT_OPTIONS, OUTPUT_OPTIONS_DEFAULT,
+    HTTP_GET, HTTP_POST, BASE_OUTPUT_OPTIONS, OUTPUT_OPTIONS, OUTPUT_OPTIONS_DEFAULT,
     OUTPUT_OPTIONS_DEFAULT_OFFLINE, OUTPUT_OPTIONS_DEFAULT_STDOUT_REDIRECTED,
     OUT_RESP_BODY, PRETTY_MAP, PRETTY_STDOUT_TTY_ONLY, RequestType,
     SEPARATOR_CREDENTIALS,
@@ -50,7 +50,64 @@ class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
 
 # TODO: refactor and design type-annotated data structures
 #       for raw args + parsed args and keep things immutable.
-class HTTPieArgumentParser(argparse.ArgumentParser):
+class BaseHTTPieArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args, formatter_class=HTTPieHelpFormatter, **kwargs):
+        super().__init__(*args, formatter_class=formatter_class, **kwargs)
+        self.env = None
+        self.args = None
+        self.has_stdin_data = False
+        self.has_input_data = False
+
+    # noinspection PyMethodOverriding
+    def parse_args(
+        self,
+        env: Environment,
+        args=None,
+        namespace=None
+    ) -> argparse.Namespace:
+        self.env = env
+        self.args, no_options = self.parse_known_args(args, namespace)
+        if self.args.debug:
+            self.args.traceback = True
+        self.has_stdin_data = (
+            self.env.stdin
+            and not getattr(self.args, 'ignore_stdin', False)
+            and not self.env.stdin_isatty
+        )
+        self.has_input_data = self.has_stdin_data or getattr(self.args, 'raw', None) is not None
+        return self.args
+
+    # noinspection PyShadowingBuiltins
+    def _print_message(self, message, file=None):
+        # Sneak in our stderr/stdout.
+        if hasattr(self, 'root'):
+            env = self.root.env
+        else:
+            env = self.env
+
+        if env is not None:
+            file = {
+                sys.stdout: env.stdout,
+                sys.stderr: env.stderr,
+                None: env.stderr
+            }.get(file, file)
+
+        if not hasattr(file, 'buffer') and isinstance(message, str):
+            message = message.encode(env.stdout_encoding)
+        super()._print_message(message, file)
+
+
+class HTTPieManagerArgumentParser(BaseHTTPieArgumentParser):
+    def parse_known_args(self, args=None, namespace=None):
+        try:
+            return super().parse_known_args(args, namespace)
+        except SystemExit as exc:
+            if not hasattr(self, 'root') and exc.code == 2:  # Argument Parser Error
+                raise argparse.ArgumentError(None, None)
+            raise
+
+
+class HTTPieArgumentParser(BaseHTTPieArgumentParser):
     """Adds additional logic to `argparse.ArgumentParser`.
 
     Handles all input (CLI args, file args, stdin), applies defaults,
@@ -58,13 +115,9 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
 
     """
 
-    def __init__(self, *args, formatter_class=HTTPieHelpFormatter, **kwargs):
-        kwargs['add_help'] = False
-        super().__init__(*args, formatter_class=formatter_class, **kwargs)
-        self.env = None
-        self.args = None
-        self.has_stdin_data = False
-        self.has_input_data = False
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('add_help', False)
+        super().__init__(*args, **kwargs)
 
     # noinspection PyMethodOverriding
     def parse_args(
@@ -120,6 +173,9 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
         }
 
     def _process_url(self):
+        if self.args.url.startswith('://'):
+            # Paste URL & add space shortcut: `http ://pie.dev` → `http://pie.dev`
+            self.args.url = self.args.url[3:]
         if not URL_SCHEME_RE.match(self.args.url):
             if os.path.basename(self.env.program_name) == 'https':
                 scheme = 'https://'
@@ -137,18 +193,6 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
                 self.args.url += rest
             else:
                 self.args.url = scheme + self.args.url
-
-    # noinspection PyShadowingBuiltins
-    def _print_message(self, message, file=None):
-        # Sneak in our stderr/stdout.
-        file = {
-            sys.stdout: self.env.stdout,
-            sys.stderr: self.env.stderr,
-            None: self.env.stderr
-        }.get(file, file)
-        if not hasattr(file, 'buffer') and isinstance(message, str):
-            message = message.encode(self.env.stdout_encoding)
-        super()._print_message(message, file)
 
     def _setup_standard_streams(self):
         """
@@ -252,6 +296,10 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
                             ' --ignore-stdin is set.'
                         )
                     credentials.prompt_password(url.netloc)
+
+                if (credentials.key and credentials.value):
+                    plugin.raw_auth = credentials.key + ":" + credentials.value
+
                 self.args.auth = plugin.get_auth(
                     username=credentials.key,
                     password=credentials.value,
@@ -361,7 +409,7 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
         try:
             request_items = RequestItems.from_args(
                 request_item_args=self.args.request_items,
-                as_form=self.args.form,
+                request_type=self.args.request_type,
             )
         except ParseError as e:
             if self.args.traceback:
@@ -412,8 +460,10 @@ class HTTPieArgumentParser(argparse.ArgumentParser):
             self.args.all = True
 
         if self.args.output_options is None:
-            if self.args.verbose:
+            if self.args.verbose >= 2:
                 self.args.output_options = ''.join(OUTPUT_OPTIONS)
+            elif self.args.verbose == 1:
+                self.args.output_options = ''.join(BASE_OUTPUT_OPTIONS)
             elif self.args.offline:
                 self.args.output_options = OUTPUT_OPTIONS_DEFAULT_OFFLINE
             elif not self.env.stdout_isatty:

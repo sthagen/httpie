@@ -3,6 +3,7 @@ on:
     paths:
       - .github/workflows/test-package-linux-snap.yml
       - snapcraft.yaml
+  workflow_dispatch:
 
 jobs:
   snap:
@@ -18,6 +19,7 @@ jobs:
         run: |
           httpie.http --version
           httpie.https --version
+          httpie --version
           # Auto-aliases cannot be tested when installing a snap outside the store.
           # http --version
           # https --version
