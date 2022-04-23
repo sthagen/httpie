@@ -10,7 +10,8 @@ from urllib.parse import urlsplit
 from requests.utils import get_netrc_auth
 
 from .argtypes import (
-    AuthCredentials, KeyValueArgType, PARSED_DEFAULT_FORMAT_OPTIONS,
+    AuthCredentials, SSLCredentials, KeyValueArgType,
+    PARSED_DEFAULT_FORMAT_OPTIONS,
     parse_auth,
     parse_format_options,
 )
@@ -47,12 +48,39 @@ class HTTPieHelpFormatter(RawDescriptionHelpFormatter):
         text = dedent(text).strip() + '\n\n'
         return text.splitlines()
 
+    def add_usage(self, usage, actions, groups, prefix=None):
+        # Only display the positional arguments
+        displayed_actions = [
+            action
+            for action in actions
+            if not action.option_strings
+        ]
+
+        _, exception, _ = sys.exc_info()
+        if (
+            isinstance(exception, argparse.ArgumentError)
+            and len(exception.args) >= 1
+            and isinstance(exception.args[0], argparse.Action)
+        ):
+            # add_usage path is also taken when you pass an invalid option,
+            # e.g --style=invalid. If something like that happens, we want
+            # to include to action that caused to the invalid usage into
+            # the list of actions we are displaying.
+            displayed_actions.insert(0, exception.args[0])
+
+        super().add_usage(
+            usage,
+            displayed_actions,
+            groups,
+            prefix="usage:\n    "
+        )
+
 
 # TODO: refactor and design type-annotated data structures
 #       for raw args + parsed args and keep things immutable.
 class BaseHTTPieArgumentParser(argparse.ArgumentParser):
-    def __init__(self, *args, formatter_class=HTTPieHelpFormatter, **kwargs):
-        super().__init__(*args, formatter_class=formatter_class, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.env = None
         self.args = None
         self.has_stdin_data = False
@@ -115,9 +143,9 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
 
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, formatter_class=HTTPieHelpFormatter, **kwargs):
         kwargs.setdefault('add_help', False)
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, formatter_class=formatter_class, **kwargs)
 
     # noinspection PyMethodOverriding
     def parse_args(
@@ -127,6 +155,7 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
         namespace=None
     ) -> argparse.Namespace:
         self.env = env
+        self.env.args = namespace = namespace or argparse.Namespace()
         self.args, no_options = super().parse_known_args(args, namespace)
         if self.args.debug:
             self.args.traceback = True
@@ -148,6 +177,7 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
         self._parse_items()
         self._process_url()
         self._process_auth()
+        self._process_ssl_cert()
 
         if self.args.raw is not None:
             self._body_from_input(self.args.raw)
@@ -230,9 +260,24 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
             self.env.stdout_isatty = False
 
         if self.args.quiet:
+            self.env.quiet = self.args.quiet
             self.env.stderr = self.env.devnull
             if not (self.args.output_file_specified and not self.args.download):
                 self.env.stdout = self.env.devnull
+            self.env.apply_warnings_filter()
+
+    def _process_ssl_cert(self):
+        from httpie.ssl_ import _is_key_file_encrypted
+
+        if self.args.cert_key_pass is None:
+            self.args.cert_key_pass = SSLCredentials(None)
+
+        if (
+            self.args.cert_key is not None
+            and self.args.cert_key_pass.value is None
+            and _is_key_file_encrypted(self.args.cert_key)
+        ):
+            self.args.cert_key_pass.prompt_password(self.args.cert_key)
 
     def _process_auth(self):
         # TODO: refactor & simplify this method.
@@ -512,3 +557,63 @@ class HTTPieArgumentParser(BaseHTTPieArgumentParser):
         for options_group in format_options:
             parsed_options = parse_format_options(options_group, defaults=parsed_options)
         self.args.format_options = parsed_options
+
+    def print_manual(self):
+        from httpie.output.ui import man_pages
+
+        if man_pages.is_available(self.env.program_name):
+            man_pages.display_for(self.env, self.env.program_name)
+            return None
+
+        text = self.format_help()
+        with self.env.rich_console.pager():
+            self.env.rich_console.print(
+                text,
+                highlight=False
+            )
+
+    def print_help(self):
+        from httpie.output.ui import rich_help
+
+        for renderable in rich_help.to_help_message(self.spec):
+            self.env.rich_console.print(renderable)
+
+    def print_usage(self, file):
+        from rich.text import Text
+        from httpie.output.ui import rich_help
+
+        whitelist = set()
+        _, exception, _ = sys.exc_info()
+        if (
+            isinstance(exception, argparse.ArgumentError)
+            and len(exception.args) >= 1
+            and isinstance(exception.args[0], argparse.Action)
+            and exception.args[0].option_strings
+        ):
+            # add_usage path is also taken when you pass an invalid option,
+            # e.g --style=invalid. If something like that happens, we want
+            # to include to action that caused to the invalid usage into
+            # the list of actions we are displaying.
+            whitelist.add(exception.args[0].option_strings[0])
+
+        usage_text = Text('usage', style='bold')
+        usage_text.append(':\n    ')
+        usage_text.append(rich_help.to_usage(self.spec, whitelist=whitelist))
+        self.env.rich_error_console.print(usage_text)
+
+    def error(self, message):
+        """Prints a usage message incorporating the message to stderr and
+        exits."""
+        self.print_usage(sys.stderr)
+        self.env.rich_error_console.print(
+            dedent(
+                f'''
+                [bold]error[/bold]:
+                    {message}
+
+                [bold]for more information[/bold]:
+                    run '{self.prog} --help' or visit https://httpie.io/docs/cli
+                '''.rstrip()
+            )
+        )
+        self.exit(2)

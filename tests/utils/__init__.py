@@ -5,6 +5,9 @@ import sys
 import time
 import json
 import tempfile
+import warnings
+import pytest
+from contextlib import suppress
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional, Union, List, Iterable
@@ -14,8 +17,12 @@ import httpie.manager.__main__ as manager
 
 from httpie.status import ExitStatus
 from httpie.config import Config
+from httpie.encoding import UTF8
 from httpie.context import Environment
+from httpie.utils import url_as_host
 
+
+REMOTE_HTTPBIN_DOMAIN = 'pie.dev'
 
 # pytest-httpbin currently does not support chunked requests:
 # <https://github.com/kevin1024/pytest-httpbin/issues/33>
@@ -27,6 +34,8 @@ HTTPBIN_WITH_CHUNKED_SUPPORT = 'http://' + HTTPBIN_WITH_CHUNKED_SUPPORT_DOMAIN
 TESTS_ROOT = Path(__file__).parent.parent
 CRLF = '\r\n'
 COLOR = '\x1b['
+COLOR_RE = re.compile(r'\x1b\[\d+(;\d+)*?m', re.MULTILINE)
+
 HTTP_OK = '200 OK'
 # noinspection GrazieInspection
 HTTP_OK_COLOR = (
@@ -36,6 +45,11 @@ HTTP_OK_COLOR = (
 )
 
 DUMMY_URL = 'http://this-should.never-resolve'  # Note: URL never fetched
+DUMMY_HOST = url_as_host(DUMMY_URL)
+
+
+def strip_colors(colorized_msg: str) -> str:
+    return COLOR_RE.sub('', colorized_msg)
 
 
 def mk_config_dir() -> Path:
@@ -46,6 +60,59 @@ def mk_config_dir() -> Path:
 def add_auth(url, auth):
     proto, rest = url.split('://', 1)
     return f'{proto}://{auth}@{rest}'
+
+
+class Encoder:
+    """
+    Encode binary fragments into a text stream. This is used
+    to embed raw binary data (which can't be decoded) into the
+    fake standard output we use on MockEnvironment.
+
+    Each data fragment is embedded by it's hash:
+        "Some data hash(XXX) more data."
+
+    Which then later converted back to a bytes object:
+        b"Some data <real data> more data."
+    """
+
+    TEMPLATE = 'hash({})'
+
+    STR_PATTERN = re.compile(r'hash\((.*)\)')
+    BYTES_PATTERN = re.compile(rb'hash\((.*)\)')
+
+    def __init__(self):
+        self.substitutions = {}
+
+    def substitute(self, data: bytes) -> str:
+        idx = hash(data)
+        self.substitutions[idx] = data
+        return self.TEMPLATE.format(idx)
+
+    def decode(self, data: str) -> Union[str, bytes]:
+        if self.STR_PATTERN.search(data) is None:
+            return data
+
+        raw_data = data.encode()
+        return self.BYTES_PATTERN.sub(
+            lambda match: self.substitutions[int(match.group(1))],
+            raw_data
+        )
+
+
+class FakeBytesIOBuffer(BytesIO):
+
+    def __init__(self, original, encoder, *args, **kwargs):
+        self.original_buffer = original
+        self.encoder = encoder
+        super().__init__(*args, **kwargs)
+
+    def write(self, data):
+        try:
+            self.original_buffer.write(data.decode(UTF8))
+        except UnicodeDecodeError:
+            self.original_buffer.write(self.encoder.substitute(data))
+        finally:
+            self.original_buffer.flush()
 
 
 class StdinBytesIO(BytesIO):
@@ -59,17 +126,23 @@ class MockEnvironment(Environment):
     stdin_isatty = True
     stdout_isatty = True
     is_windows = False
+    show_displays = False
 
-    def __init__(self, create_temp_config_dir=True, *, stdout_mode='b', **kwargs):
+    def __init__(self, create_temp_config_dir=True, **kwargs):
+        self._encoder = Encoder()
         if 'stdout' not in kwargs:
-            kwargs['stdout'] = tempfile.TemporaryFile(
-                mode=f'w+{stdout_mode}',
-                prefix='httpie_stdout'
+            kwargs['stdout'] = tempfile.NamedTemporaryFile(
+                mode='w+t',
+                prefix='httpie_stderr',
+                newline='',
+                encoding=UTF8,
             )
+            kwargs['stdout'].buffer = FakeBytesIOBuffer(kwargs['stdout'], self._encoder)
         if 'stderr' not in kwargs:
             kwargs['stderr'] = tempfile.TemporaryFile(
                 mode='w+t',
-                prefix='httpie_stderr'
+                prefix='httpie_stderr',
+                encoding=UTF8,
             )
         super().__init__(**kwargs)
         self._create_temp_config_dir = create_temp_config_dir
@@ -90,6 +163,7 @@ class MockEnvironment(Environment):
     def cleanup(self):
         self.stdout.close()
         self.stderr.close()
+        warnings.resetwarnings()
         if self._delete_config_dir:
             assert self._temp_dir in self.config_dir.parents
             from shutil import rmtree
@@ -128,6 +202,17 @@ class BaseCLIResponse:
         cmd = ' '.join(shlex.quote(arg) for arg in ['http', *self.args])
         # pytest-httpbin to real httpbin.
         return re.sub(r'127\.0\.0\.1:\d+', 'httpbin.org', cmd)
+
+    @classmethod
+    def from_raw_data(self, data: Union[str, bytes]) -> 'BaseCLIResponse':
+        if isinstance(data, bytes):
+            with suppress(UnicodeDecodeError):
+                data = data.decode()
+
+        if isinstance(data, bytes):
+            return BytesCLIResponse(data)
+        else:
+            return StrCLIResponse(data)
 
 
 class BytesCLIResponse(bytes, BaseCLIResponse):
@@ -179,6 +264,13 @@ class ExitStatusError(Exception):
     pass
 
 
+@pytest.fixture
+def mock_env() -> MockEnvironment:
+    env = MockEnvironment()
+    yield env
+    env.cleanup()
+
+
 def normalize_args(args: Iterable[Any]) -> List[str]:
     return [str(arg) for arg in args]
 
@@ -206,7 +298,7 @@ def httpie(
     env.stdout.seek(0)
     env.stderr.seek(0)
     try:
-        response = StrCLIResponse(env.stdout.read())
+        response = BaseCLIResponse.from_raw_data(env.stdout.read())
         response.stderr = env.stderr.read()
         response.exit_status = exit_status
         response.args = cli_args
@@ -324,12 +416,11 @@ def http(
         devnull.seek(0)
         output = stdout.read()
         devnull_output = devnull.read()
-        try:
-            output = output.decode()
-        except UnicodeDecodeError:
-            r = BytesCLIResponse(output)
-        else:
-            r = StrCLIResponse(output)
+
+        if hasattr(env, '_encoder'):
+            output = env._encoder.decode(output)
+
+        r = BaseCLIResponse.from_raw_data(output)
 
         try:
             devnull_output = devnull_output.decode()

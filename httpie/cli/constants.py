@@ -9,6 +9,7 @@ URL_SCHEME_RE = re.compile(r'^[a-z][a-z0-9.+-]*://', re.IGNORECASE)
 
 HTTP_POST = 'POST'
 HTTP_GET = 'GET'
+HTTP_OPTIONS = 'OPTIONS'
 
 # Various separators used in args
 SEPARATOR_HEADER = ':'
@@ -90,13 +91,19 @@ OUTPUT_OPTIONS = frozenset({
 })
 
 # Pretty
+
+
+class PrettyOptions(enum.Enum):
+    STDOUT_TTY_ONLY = enum.auto()
+
+
 PRETTY_MAP = {
     'all': ['format', 'colors'],
     'colors': ['colors'],
     'format': ['format'],
     'none': []
 }
-PRETTY_STDOUT_TTY_ONLY = object()
+PRETTY_STDOUT_TTY_ONLY = PrettyOptions.STDOUT_TTY_ONLY
 
 
 DEFAULT_FORMAT_OPTIONS = [
@@ -127,6 +134,7 @@ class RequestType(enum.Enum):
     JSON = enum.auto()
 
 
+EMPTY_STRING = ''
 OPEN_BRACKET = '['
 CLOSE_BRACKET = ']'
 BACKSLASH = '\\'

@@ -3,17 +3,38 @@
 This document records all notable changes to [HTTPie](https://httpie.io).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.1.1.dev0](https://github.com/httpie/httpie/compare/3.1.0...HEAD) (Unreleased)
+
+- Added support for session persistence of repeated headers with the same name. ([#1335](https://github.com/httpie/httpie/pull/1335))
+- Changed `httpie plugins` to the new `httpie cli` namespace as `httpie cli plugins` (`httpie plugins` continues to work as a hidden alias). ([#1320](https://github.com/httpie/httpie/issues/1320))
+- Fixed redundant creation of `Content-Length` header on `OPTIONS` requests. ([#1310](https://github.com/httpie/httpie/issues/1310))
+- Fixed blocking of warning thread on some use cases. ([#1349](https://github.com/httpie/httpie/issues/1349))
+- Added support for sending `Secure` cookies to the `localhost` (and `.local` suffixed domains). ([#1308](https://github.com/httpie/httpie/issues/1308))
+
+
+## [3.1.0](https://github.com/httpie/httpie/compare/3.0.2...3.1.0) (2022-03-08)
+
+- **SECURITY** Fixed the [vulnerability](https://github.com/httpie/httpie/security/advisories/GHSA-9w4w-cpc8-h2fq) that caused exposure of cookies on redirects to third party hosts. ([#1312](https://github.com/httpie/httpie/pull/1312))
+- Fixed escaping of integer indexes with multiple backslashes in the nested JSON builder. ([#1285](https://github.com/httpie/httpie/issues/1285))
+- Fixed displaying of status code without a status message on non-`auto` themes. ([#1300](https://github.com/httpie/httpie/issues/1300))
+- Fixed redundant issuance of stdin detection warnings on some rare cases due to underlying implementation. ([#1303](https://github.com/httpie/httpie/pull/1303))
+- Fixed double `--quiet` so that it will now suppress all python level warnings. ([#1271](https://github.com/httpie/httpie/issues/1271))
+- Added support for specifying certificate private key passphrases through `--cert-key-pass` and prompts. ([#946](https://github.com/httpie/httpie/issues/946))
+- Added `httpie cli export-args` command for exposing the parser specification for the `http`/`https` commands. ([#1293](https://github.com/httpie/httpie/pull/1293))
+- Improved regulation of top-level arrays. ([#1292](https://github.com/httpie/httpie/commit/225dccb2186f14f871695b6c4e0bfbcdb2e3aa28))
+- Improved UI layout for standalone invocations. ([#1296](https://github.com/httpie/httpie/pull/1296))
+
 ## [3.0.2](https://github.com/httpie/httpie/compare/3.0.1...3.0.2) (2022-01-24)
 
 [What’s new in HTTPie for Terminal 3.0 →](https://httpie.io/blog/httpie-3.0.0)
 
-- Fixed usage of `httpie` when there is a presence of a config with `default_options` ([#1280](https://github.com/httpie/httpie/pull/1280)).
+- Fixed usage of `httpie` when there is a presence of a config with `default_options`. ([#1280](https://github.com/httpie/httpie/pull/1280))
 
 ## [3.0.1](https://github.com/httpie/httpie/compare/3.0.0...3.0.1) (2022-01-23)
 
 [What’s new in HTTPie for Terminal 3.0 →](https://httpie.io/blog/httpie-3.0.0)
 
-- Changed the value shown as time elapsed from time-to-read-headers to total exchange time ([#1277](https://github.com/httpie/httpie/issues/1277))
+- Changed the value shown as time elapsed from time-to-read-headers to total exchange time. ([#1277](https://github.com/httpie/httpie/issues/1277))
 
 ## [3.0.0](https://github.com/httpie/httpie/compare/2.6.0...3.0.0) (2022-01-21)
 

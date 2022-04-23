@@ -9,6 +9,7 @@ from collections import OrderedDict
 from http.cookiejar import parse_ns_headers
 from pathlib import Path
 from pprint import pformat
+from urllib.parse import urlsplit
 from typing import Any, List, Optional, Tuple, Callable, Iterable, TypeVar
 
 import requests.auth
@@ -213,12 +214,31 @@ def parse_content_type_header(header):
     return content_type, params_dict
 
 
-def as_site(path: Path) -> Path:
+def as_site(path: Path, **extra_vars) -> Path:
     site_packages_path = sysconfig.get_path(
         'purelib',
-        vars={'base': str(path)}
+        vars={'base': str(path), **extra_vars}
     )
     return Path(site_packages_path)
+
+
+def get_site_paths(path: Path) -> Iterable[Path]:
+    from httpie.compat import (
+        MIN_SUPPORTED_PY_VERSION,
+        MAX_SUPPORTED_PY_VERSION,
+        is_frozen
+    )
+
+    if is_frozen:
+        [major, min_minor] = MIN_SUPPORTED_PY_VERSION
+        [major, max_minor] = MAX_SUPPORTED_PY_VERSION
+        for minor in range(min_minor, max_minor + 1):
+            yield as_site(
+                path,
+                py_version_short=f'{major}.{minor}'
+            )
+    else:
+        yield as_site(path)
 
 
 def split(iterable: Iterable[T], key: Callable[[T], bool]) -> Tuple[List[T], List[T]]:
@@ -237,3 +257,7 @@ def unwrap_context(exc: Exception) -> Optional[Exception]:
         return unwrap_context(context)
     else:
         return exc
+
+
+def url_as_host(url: str) -> str:
+    return urlsplit(url).netloc.split('@')[-1]

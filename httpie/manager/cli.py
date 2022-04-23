@@ -1,39 +1,90 @@
 from textwrap import dedent
 from httpie.cli.argparser import HTTPieManagerArgumentParser
+from httpie.cli.options import Qualifiers, ARGPARSE_QUALIFIER_MAP, map_qualifiers, parser_to_parser_spec
 from httpie import __version__
 
+CLI_SESSION_UPGRADE_FLAGS = [
+    {
+        'flags': ['--bind-cookies'],
+        'action': 'store_true',
+        'default': False,
+        'help': 'Bind domainless cookies to the host that session belongs.'
+    }
+]
+
 COMMANDS = {
-    'plugins': {
-        'help': 'Manage HTTPie plugins.',
-        'install': [
-            'Install the given targets from PyPI '
-            'or from a local paths.',
+    'cli': {
+        'help': 'Manage HTTPie for Terminal',
+        'export-args': [
+            'Export available options for the CLI',
             {
-                'dest': 'targets',
-                'nargs': '+',
-                'help': 'targets to install'
+                'flags': ['-f', '--format'],
+                'choices': ['json'],
+                'default': 'json'
             }
         ],
-        'upgrade': [
-            'Upgrade the given plugins',
-            {
-                'dest': 'targets',
-                'nargs': '+',
-                'help': 'targets to upgrade'
-            }
-        ],
-        'uninstall': [
-            'Uninstall the given HTTPie plugins.',
-            {
-                'dest': 'targets',
-                'nargs': '+',
-                'help': 'targets to install'
-            }
-        ],
-        'list': [
-            'List all installed HTTPie plugins.'
-        ],
-    },
+        'sessions': {
+            'help': 'Manage HTTPie sessions',
+            'upgrade': [
+                'Upgrade the given HTTPie session with the latest '
+                'layout. A list of changes between different session versions '
+                'can be found in the official documentation.',
+                {
+                    'dest': 'hostname',
+                    'metavar': 'HOSTNAME',
+                    'help': 'The host this session belongs.'
+                },
+                {
+                    'dest': 'session',
+                    'metavar': 'SESSION_NAME_OR_PATH',
+                    'help': 'The name or the path for the session that will be upgraded.'
+                },
+                *CLI_SESSION_UPGRADE_FLAGS
+            ],
+            'upgrade-all': [
+                'Upgrade all named sessions with the latest layout. A list of '
+                'changes between different session versions can be found in the official '
+                'documentation.',
+                *CLI_SESSION_UPGRADE_FLAGS
+            ],
+        }
+    }
+}
+
+
+COMMANDS['plugins'] = COMMANDS['cli']['plugins'] = {
+    'help': 'Manage HTTPie plugins.',
+    'install': [
+        'Install the given targets from PyPI '
+        'or from a local paths.',
+        {
+            'dest': 'targets',
+            'metavar': 'TARGET',
+            'nargs': Qualifiers.ONE_OR_MORE,
+            'help': 'targets to install'
+        }
+    ],
+    'upgrade': [
+        'Upgrade the given plugins',
+        {
+            'dest': 'targets',
+            'metavar': 'TARGET',
+            'nargs': Qualifiers.ONE_OR_MORE,
+            'help': 'targets to upgrade'
+        }
+    ],
+    'uninstall': [
+        'Uninstall the given HTTPie plugins.',
+        {
+            'dest': 'targets',
+            'metavar': 'TARGET',
+            'nargs': Qualifiers.ONE_OR_MORE,
+            'help': 'targets to install'
+        }
+    ],
+    'list': [
+        'List all installed HTTPie plugins.'
+    ],
 }
 
 
@@ -47,22 +98,28 @@ def missing_subcommand(*args) -> str:
     return f'Please specify one of these: {subcommands}'
 
 
-def generate_subparsers(root, parent_parser, definitions):
+def generate_subparsers(root, parent_parser, definitions, spec):
     action_dest = '_'.join(parent_parser.prog.split()[1:] + ['action'])
     actions = parent_parser.add_subparsers(
         dest=action_dest
     )
     for command, properties in definitions.items():
         is_subparser = isinstance(properties, dict)
+        properties = properties.copy()
+
         descr = properties.pop('help', None) if is_subparser else properties.pop(0)
         command_parser = actions.add_parser(command, description=descr)
         command_parser.root = root
         if is_subparser:
-            generate_subparsers(root, command_parser, properties)
+            generate_subparsers(root, command_parser, properties, spec)
             continue
 
+        group = spec.add_group(parent_parser.prog + ' ' + command, description=descr)
         for argument in properties:
-            command_parser.add_argument(**argument)
+            argument = argument.copy()
+            flags = argument.pop('flags', [])
+            command_parser.add_argument(*flags, **map_qualifiers(argument, ARGPARSE_QUALIFIER_MAP))
+            group.add_argument(*flags, **argument)
 
 
 parser = HTTPieManagerArgumentParser(
@@ -109,4 +166,5 @@ parser.add_argument(
     '''
 )
 
-generate_subparsers(parser, parser, COMMANDS)
+options = parser_to_parser_spec(parser)
+generate_subparsers(parser, parser, COMMANDS, options)

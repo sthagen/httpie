@@ -1,3 +1,5 @@
+name: Release on Snap
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,16 +9,32 @@ on:
         default: "master"
 
 jobs:
-  snap:
+  snap-build-and-release:
+    name: Build & Release the Snap Package
     runs-on: ubuntu-latest
+
+    strategy:
+      # If any of the stages fail, then we'll stop the action
+      # to give release manager time to investigate the underlying
+      # issue.
+      fail-fast: true
+      matrix:
+        level: [edge, beta, candidate, stable]
+
+    # Set the concurrency level for this version, so
+    # that we'll release one by one.
+    concurrency: ${{ github.event.inputs.branch }}
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           ref: ${{ github.event.inputs.branch }}
+
       - uses: snapcore/action-build@v1
         id: build
+
       - uses: snapcore/action-publish@v1
         with:
           store_login: ${{ secrets.SNAP_STORE_LOGIN }}
           snap: ${{ steps.build.outputs.snap }}
-          release: edge
+          release: ${{ matrix.level }}

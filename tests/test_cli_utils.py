@@ -28,7 +28,7 @@ def test_lazy_choices():
         cache=False  # for test purposes
     )
 
-    # Parser initalization doesn't call it.
+    # Parser initialization doesn't call it.
     getter.assert_not_called()
 
     # If we don't use --lazy-option, we don't retrieve it.
@@ -69,7 +69,7 @@ def test_lazy_choices_help():
         cache=False  # for test purposes
     )
 
-    # Parser initalization doesn't call it.
+    # Parser initialization doesn't call it.
     getter.assert_not_called()
 
     # If we don't use `--help`, we don't use it.
@@ -83,4 +83,4 @@ def test_lazy_choices_help():
     # If we use --help, then we call it with styles
     with pytest.raises(SystemExit):
         parser.parse_args(['--help'])
-    help_formatter.assert_called_once_with(['a', 'b', 'c'])
+    help_formatter.assert_called_once_with(['a', 'b', 'c'], isolation_mode=False)
