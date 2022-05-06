@@ -162,6 +162,8 @@ Also works for other Debian-derived distributions like MX Linux, Linux Mint, dee
 
 ```bash
 # Install httpie
+$ curl -SsL https://packages.httpie.io/deb/KEY.gpg | apt-key add -
+$ curl -SsL -o /etc/apt/sources.list.d/httpie.list https://packages.httpie.io/deb/httpie.list
 $ apt update
 $ apt install httpie
 ```
@@ -277,7 +279,7 @@ Synopsis:
 $ http [flags] [METHOD] URL [ITEM [ITEM]]
 ```
 
-See also `http --help`.
+See also `http --help` (and for systems where man pages are available, you can use `man http`).
 
 ### Examples
 
@@ -1653,6 +1655,10 @@ If you’d like to silence warnings as well, use `-q` or `--quiet` twice:
 $ http -qq --check-status pie.dev/post enjoy='the silence without warnings'
 ```
 
+### Update warnings
+
+When there is a new release available for your platform (for example; if you installed HTTPie through `pip`, it will check the latest version on `PyPI`), HTTPie will regularly warn you about the new update (once a week). If you want to disable this behavior, you can set `disable_update_warnings` to `true` in your [config](#config) file.
+
 ### Viewing intermediary requests/responses
 
 To see all the HTTP communication, i.e. the final request/response as well as any possible intermediary requests/responses, use the `--all` option.
@@ -1664,14 +1670,6 @@ $ http --all --follow pie.dev/redirect/3
 ```
 
 The intermediary requests/responses are by default formatted according to `--print, -p` (and its shortcuts described above).
-
-If you’d like to change that, use the `--history-print, -P` option.
-It takes the same arguments as `--print, -p` but applies to the intermediary requests only.
-
-```bash
-# Print the intermediary requests/responses differently than the final one:
-$ http -A digest -a foo:bar --all -p Hh -P H pie.dev/digest-auth/auth/foo/bar
-```
 
 ### Conditional body download
 
@@ -2405,6 +2403,14 @@ For managing these plugins; starting with 3.0, we are offering a new plugin mana
 This command is currently in beta.
 
 ### `httpie cli`
+
+#### `httpie cli check-updates`
+
+You can check whether a new update is available for your system by running `httpie cli check-updates`:
+
+```bash-termible
+$ httpie cli check-updates
+````
 
 #### `httpie cli export-args`
 
