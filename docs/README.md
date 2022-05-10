@@ -215,6 +215,21 @@ $ pacman -Syu httpie
 $ pacman -Syu
 ```
 
+#### Single binary executables
+
+Have a standalone HTTPie executable when you don't want to go through the full installation process
+
+```bash
+# Install httpie
+$ https --download packages.httpie.io/binaries/linux/http-latest -o http
+$ chmod +x ./http
+```
+
+```bash
+# Upgrade httpie
+$ https --download packages.httpie.io/binaries/linux/http-latest -o http
+```
+
 ### FreeBSD
 
 #### FreshPorts

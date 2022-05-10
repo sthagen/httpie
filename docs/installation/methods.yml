@@ -23,6 +23,7 @@ docs-structure:
     - dnf
     - yum
     - pacman
+    - single-binary
   FreeBSD:
     - pkg
 
@@ -181,3 +182,15 @@ tools:
         - yum install httpie
       upgrade:
         - yum upgrade httpie
+
+  single-binary:
+    title: Single binary executables
+    name: Single binary executables
+    note: Have a standalone HTTPie executable when you don't want to go through the full installation process.
+    links:
+    commands:
+      install:
+        - https --download packages.httpie.io/binaries/linux/http-latest -o http
+        - chmod +x ./http
+      upgrade:
+        - https --download packages.httpie.io/binaries/linux/http-latest -o http
