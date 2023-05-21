@@ -1174,7 +1174,7 @@ User-Agent: HTTPie/<version>
 Host: <taken-from-URL>
 ```
 
-Any of these can be overwritten and some of them unset (see below).
+All of these can be overwritten or unset (see below).
 
 ### Reading headers from a file
 
@@ -2596,3 +2596,4 @@ BSD-3-Clause: [LICENSE](https://github.com/httpie/httpie/blob/master/LICENSE).
 ### Authors
 
 [Jakub Roztocil](https://roztocil.co) ([@jakubroztocil](https://twitter.com/jakubroztocil)) created HTTPie and [these fine people](https://github.com/httpie/httpie/blob/master/AUTHORS.md) have contributed.
+

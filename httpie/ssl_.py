@@ -4,12 +4,11 @@ from typing import NamedTuple, Optional
 from httpie.adapters import HTTPAdapter
 # noinspection PyPackageRequirements
 from urllib3.util.ssl_ import (
-    DEFAULT_CIPHERS, create_urllib3_context,
+    create_urllib3_context,
     resolve_ssl_version,
 )
 
 
-DEFAULT_SSL_CIPHERS = DEFAULT_CIPHERS
 SSL_VERSION_ARG_MAPPING = {
     'ssl2.3': 'PROTOCOL_SSLv23',
     'ssl3': 'PROTOCOL_SSLv3',
@@ -81,6 +80,10 @@ class HTTPieHTTPSAdapter(HTTPAdapter):
             cert_reqs=ssl.CERT_REQUIRED if verify else ssl.CERT_NONE
         )
 
+    @classmethod
+    def get_default_ciphers_names(cls):
+        return [cipher['name'] for cipher in cls._create_ssl_context(verify=False).get_ciphers()]
+
 
 def _is_key_file_encrypted(key_file):
     """Detects if a key file is encrypted or not.
@@ -94,3 +97,9 @@ def _is_key_file_encrypted(key_file):
                 return True
 
     return False
+
+
+# We used to import the default set of TLS ciphers from urllib3, but they removed it.
+# Instead, now urllib3 uses the list of ciphers configured by the system.
+# <https://github.com/httpie/httpie/pull/1501>
+DEFAULT_SSL_CIPHERS_STRING = ':'.join(HTTPieHTTPSAdapter.get_default_ciphers_names())
