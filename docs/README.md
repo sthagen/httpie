@@ -126,6 +126,66 @@ $ choco upgrade httpie
 
 ### Linux
 
+#### Debian and Ubuntu
+
+Also works for other Debian-derived distributions like MX Linux, Linux Mint, deepin, Pop!_OS, KDE neon, Zorin OS, elementary OS, Kubuntu, Devuan, Linux Lite, Peppermint OS, Lubuntu, antiX, Xubuntu, etc.
+
+```bash
+# Install httpie
+$ curl -SsL https://packages.httpie.io/deb/KEY.gpg | sudo gpg --dearmor -o /usr/share/keyrings/httpie.gpg
+$ sudo echo "deb [arch=amd64 signed-by=/usr/share/keyrings/httpie.gpg] https://packages.httpie.io/deb ./" > /etc/apt/sources.list.d/httpie.list
+$ sudo apt update
+$ sudo apt install httpie
+```
+
+```bash
+# Upgrade httpie
+$ sudo apt update && sudo apt upgrade httpie
+```
+
+#### Fedora
+
+```bash
+# Install httpie
+$ dnf install httpie
+```
+
+```bash
+# Upgrade httpie
+$ dnf upgrade httpie
+```
+
+#### CentOS and RHEL
+
+Also works for other RHEL-derived distributions like ClearOS, Oracle Linux, etc.
+
+```bash
+# Install httpie
+$ yum install epel-release
+$ yum install httpie
+```
+
+```bash
+# Upgrade httpie
+$ yum upgrade httpie
+```
+
+#### Single binary executables
+
+Get the standalone HTTPie Linux executables when you don't want to go through the full installation process.
+
+```bash
+# Install httpie
+$ https --download packages.httpie.io/binaries/linux/http-latest -o http
+$ ln -ls ./http ./https
+$ chmod +x ./http ./https
+```
+
+```bash
+# Upgrade httpie
+$ https --download packages.httpie.io/binaries/linux/http-latest -o http
+```
+
 #### Snapcraft (Linux)
 
 To install [Snapcraft](https://snapcraft.io/), see [its installation](https://snapcraft.io/docs/installing-snapd).
@@ -156,51 +216,6 @@ $ brew update
 $ brew upgrade httpie
 ```
 
-#### Debian and Ubuntu
-
-Also works for other Debian-derived distributions like MX Linux, Linux Mint, deepin, Pop!_OS, KDE neon, Zorin OS, elementary OS, Kubuntu, Devuan, Linux Lite, Peppermint OS, Lubuntu, antiX, Xubuntu, etc.
-
-```bash
-# Install httpie
-$ curl -SsL https://packages.httpie.io/deb/KEY.gpg | apt-key add -
-$ curl -SsL -o /etc/apt/sources.list.d/httpie.list https://packages.httpie.io/deb/httpie.list
-$ apt update
-$ apt install httpie
-```
-
-```bash
-# Upgrade httpie
-$ apt update
-$ apt upgrade httpie
-```
-
-#### Fedora
-
-```bash
-# Install httpie
-$ dnf install httpie
-```
-
-```bash
-# Upgrade httpie
-$ dnf upgrade httpie
-```
-
-#### CentOS and RHEL
-
-Also works for other RHEL-derived distributions like ClearOS, Oracle Linux, etc.
-
-```bash
-# Install httpie
-$ yum install epel-release
-$ yum install httpie
-```
-
-```bash
-# Upgrade httpie
-$ yum upgrade httpie
-```
-
 #### Arch Linux
 
 Also works for other Arch-derived distributions like ArcoLinux, EndeavourOS, Artix Linux, etc.
@@ -213,21 +228,6 @@ $ pacman -Syu httpie
 ```bash
 # Upgrade httpie
 $ pacman -Syu
-```
-
-#### Single binary executables
-
-Get the standalone HTTPie Linux executables when you don't want to go through the full installation process
-
-```bash
-# Install httpie
-$ https --download packages.httpie.io/binaries/linux/http-latest -o http
-$ chmod +x ./http
-```
-
-```bash
-# Upgrade httpie
-$ https --download packages.httpie.io/binaries/linux/http-latest -o http
 ```
 
 ### FreeBSD
@@ -915,6 +915,8 @@ http --offline --print=B pie.dev/post \
 ]
 ```
 
+Sending scalar JSON types (a single `null`, `true`, `false`,  string or number) as the top-level object is impossible using the key/value syntax. But you can still pass it via [`--raw='<value>'`](#raw-request-body).
+
 ##### Escaping behavior
 
 Nested JSON syntax uses the same [escaping rules](#escaping-rules) as
@@ -1178,7 +1180,7 @@ All of these can be overwritten or unset (see below).
 
 ### Reading headers from a file
 
-You can read headers from a file by using the `:@` operator. This would also effectively strip the newlines from the end. See [#file-based-separators] for more examples.
+You can read headers from a file by using the `:@` operator. This would also effectively strip the newlines from the end. See [file based separators](#file-based-separators) for more examples.
 
 ```bash
 $ http pie.dev/headers X-Data:@files/text.txt
