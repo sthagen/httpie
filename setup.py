@@ -11,7 +11,6 @@ import httpie
 tests_require = [
     'pytest',
     'pytest-httpbin>=0.0.6',
-    'pytest-lazy-fixture>=0.0.6',
     'responses',
     'pytest-mock',
     'werkzeug<2.1.0'
@@ -96,6 +95,13 @@ setup(
         'Development Status :: 5 - Production/Stable',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3 :: Only',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: Implementation :: CPython',
         'Environment :: Console',
         'Intended Audience :: Developers',
         'Intended Audience :: System Administrators',
