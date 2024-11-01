@@ -574,7 +574,7 @@ $ http PUT pie.dev/put \
 |                                    HTTP Headers `Name:Value` | Arbitrary HTTP header, e.g. `X-API-Token:123`                                                                                                                                                                          |
 |                                 URL parameters `name==value` | Appends the given name/value pair as a querystring parameter to the URL. The `==` separator is used.                                                                                                                   |
 |                                    Data Fields `field=value` | Request data fields to be serialized as a JSON object (default), to be form-encoded (with `--form, -f`), or to be serialized as `multipart/form-data` (with `--multipart`)                                             |
-|                                Raw JSON fields `field:=json` | Useful when sending JSON and one or more fields need to be a `Boolean`, `Number`, nested `Object`, or an `Array`, e.g., `meals:='["ham","spam"]'` or `pies:=[1,2,3]` (note the quotes)                                 |
+|                                Raw JSON fields `field:=json` | Useful when sending JSON and one or more fields need to be a `Boolean`, `Number`, nested `Object`, or an `Array`, e.g., `meals:='["ham","spam"]'` or `pies:='[1,2,3]'` (note the quotes)                                 |
 | File upload fields `field@/dir/file`, `field@file;type=mime` | Only available with `--form`, `-f` and `--multipart`. For example `screenshot@~/Pictures/img.png`, or `'cv@cv.txt;type=text/markdown'`. With `--form`, the presence of a file field results in a `--multipart` request |
 
 Note that the structured data fields aren’t the only way to specify request data:
@@ -2568,7 +2568,7 @@ HTTPie plays exceptionally well with the following tools:
 
 Helpers to convert from other client tools:
 
-- [CurliPie](https://curlipie.now.sh/) help convert cURL command line to HTTPie command line
+- [CurliPie](https://curlipie.open-api.vn) — library to convert cURL commands to HTTPie
 
 #### Alternatives
 
